@@ -29,7 +29,12 @@ logger = logging.getLogger(__name__)
 
 class Scheduler:
     """
-    Naive FCFS scheduler — processes requests one at a time.
+    Continuous-batching FCFS scheduler.
+
+    Each step() prefills any newly admitted requests (one by one) and then
+    runs a single batched decode forward pass over all running requests.
+    Finished requests are retired at step end so their slots are available
+    immediately on the next iteration.
 
     Public API (thread-safe):
         add_request(req)   — enqueue a new request
@@ -101,17 +106,22 @@ class Scheduler:
 
     def step(self) -> list[Request]:
         """
-        One scheduling iteration — maximally naive.
+        One scheduling iteration — two phases:
 
-        Takes one request from the waiting queue, prefills it, and decodes
-        it to completion before moving on to the next request.  No batching,
-        no interleaving.
+          Phase 1: admit waiting requests (up to max_running) and prefill
+                   them one by one. Each prefilled request emits its first
+                   token and joins the running set.
+          Phase 2: run a single batched decode forward pass over every
+                   running request (including those just prefilled above).
+
+        Requests that finish (hit EOS or max tokens) are retired at the end
+        of the step; their slots become available on the next iteration.
 
         Returns list of requests that finished in this step.
         """
         finished: list[Request] = []
 
-        # ── Pick one request ────────────────────────────────────────────
+        # ── Phase 1: admit + prefill newly admitted requests ────────────
         with self._lock:
             # if not self.waiting:
             #     return finished
