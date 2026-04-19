@@ -147,7 +147,7 @@ class Scheduler:
         if not self.running:
             return finished
 
-        # ── Decode until finished ───────────────────────────────────────
+        # ── Phase 2: batched decode over all running requests ───────────────────────────────────────
         # while not self._check_finished(req, token_id):
         #     token_id = self.engine.decode_step(req)
         #     req.output_ids.append(token_id)
