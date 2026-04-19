@@ -194,13 +194,12 @@ class Engine:
         )
 
         # pad per-request KV caches to max_cache_len
-        # (batch, kv_heads, max_cache_len, head_dim)
         num_layers = len(requests[0].kv_cache)
         batched_kv: list[tuple[torch.Tensor, torch.Tensor]] = []
         for layer_idx in range(num_layers):
             ks, vs = [], []
             for i, req in enumerate(requests):
-                k, v = req.kv_cache[layer_idx]  # (1, kv_heads, L_i, head_dim)
+                k, v = req.kv_cache[layer_idx]  # (batch_size, kv_heads, max_cache_len, head_dim)
                 pad = max_cache_len - cache_lens[i]
                 k = torch.nn.functional.pad(k, (0, 0, 0, pad))
                 v = torch.nn.functional.pad(v, (0, 0, 0, pad))
@@ -219,20 +218,21 @@ class Engine:
             float_mask[i, 0, 0, :L] = 0.0          # valid cached tokens
             float_mask[i, 0, 0, max_cache_len] = 0.0  # new token position (always last)
 
-        # run batched forward pass
+        # run one batched forward pass
         logits, new_kv_caches = self.model(
             last_tokens, position_ids, kv_caches=batched_kv, attention_mask=float_mask
         )
 
-        # extract per-request KV (old valid slice + new token) and sample
+        # extract per-request KV (actual portion + new token) and sample
+        # (batch, kv_heads, max_cache_len+1, head_dim)
         token_ids: list[int] = []
         for i, (req, L) in enumerate(zip(requests, cache_lens)):
             req.kv_cache = [
                 (
                     torch.cat([new_kv_caches[l][0][i:i+1, :, :L, :],
-                               new_kv_caches[l][0][i:i+1, :, -1:, :]], dim=2),
+                               new_kv_caches[l][0][i:i+1, :, -1:, :]], dim=2), # k tensor
                     torch.cat([new_kv_caches[l][1][i:i+1, :, :L, :],
-                               new_kv_caches[l][1][i:i+1, :, -1:, :]], dim=2),
+                               new_kv_caches[l][1][i:i+1, :, -1:, :]], dim=2), # v tensor
                 )
                 for l in range(num_layers)
             ]
