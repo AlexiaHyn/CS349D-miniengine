@@ -144,7 +144,7 @@ class Scheduler:
                 if self._check_finished(req,token_id):
                     self._finish_request(req, finished)
         self.running = [req for req in self.running if req.status == RequestStatus.RUNNING]
-        if not self.runnning:
+        if not self.running:
             return finished
 
         # ── Decode until finished ───────────────────────────────────────
