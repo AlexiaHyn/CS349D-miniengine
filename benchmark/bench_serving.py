@@ -112,6 +112,26 @@ def prepare_requests(
         0.0 = uniform random from [1, input_len] and [1, output_len]
         0.5 = uniform random from [input_len/2, input_len] etc.
     """
+    def tokenize(content: str) -> list[int]:
+        msgs = [{"role": "user", "content": content}]
+        try:
+            out = tokenizer.apply_chat_template(
+                msgs, tokenize=True, add_generation_prompt=True,
+                enable_thinking=False,
+            )
+        except TypeError:
+            out = tokenizer.apply_chat_template(
+                msgs, tokenize=True, add_generation_prompt=True,
+            )
+        if hasattr(out, "keys") and "input_ids" in out:
+            out = out["input_ids"]
+        return out
+
+    # Measure tokens-per-filler once so padding can jump directly to target.
+    filler = " The quick brown fox jumps over the lazy dog."
+    base_len = len(tokenize(""))
+    tokens_per_filler = max(1, len(tokenize(filler)) - base_len)
+
     requests = []
     for i in range(num_requests):
         # Compute this request's target lengths
@@ -128,15 +148,7 @@ def prepare_requests(
         # Pick a prompt and truncate/pad to target input length
         raw_prompt = prompts[i % len(prompts)]
         messages = [{"role": "user", "content": raw_prompt}]
-        try:
-            ids = tokenizer.apply_chat_template(
-                messages, tokenize=True, add_generation_prompt=True,
-                enable_thinking=False,
-            )
-        except TypeError:
-            ids = tokenizer.apply_chat_template(
-                messages, tokenize=True, add_generation_prompt=True,
-            )
+        ids = tokenize(raw_prompt)
 
         if len(ids) > req_input_len:
             # Truncate: decode back to text from truncated ids
@@ -146,25 +158,21 @@ def prepare_requests(
             messages = [{"role": "user", "content": truncated_text}]
             actual_input_len = req_input_len
         elif len(ids) < req_input_len:
-            # Pad by repeating the prompt
-            filler = " The quick brown fox jumps over the lazy dog."
+            # Pad by estimating how many fillers we need, then calibrate.
             padded = raw_prompt
-            while True:
-                padded += filler
-                msgs = [{"role": "user", "content": padded}]
-                try:
-                    test_ids = tokenizer.apply_chat_template(
-                        msgs, tokenize=True, add_generation_prompt=True,
-                        enable_thinking=False,
-                    )
-                except TypeError:
-                    test_ids = tokenizer.apply_chat_template(
-                        msgs, tokenize=True, add_generation_prompt=True,
-                    )
-                if len(test_ids) >= req_input_len:
-                    messages = msgs
-                    actual_input_len = len(test_ids)
+            deficit = req_input_len - len(ids)
+            n = max(1, -(-deficit // tokens_per_filler))  # ceil div
+            padded += filler * n
+            cur_ids = tokenize(padded)
+            # Calibrate: at most a couple of iterations.
+            for _ in range(4):
+                if len(cur_ids) >= req_input_len:
                     break
+                extra = max(1, -(-(req_input_len - len(cur_ids)) // tokens_per_filler))
+                padded += filler * extra
+                cur_ids = tokenize(padded)
+            messages = [{"role": "user", "content": padded}]
+            actual_input_len = len(cur_ids)
         else:
             actual_input_len = len(ids)
 
