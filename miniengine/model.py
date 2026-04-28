@@ -78,7 +78,11 @@ class RMSNorm(nn.Module):
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
+        # Variance in fp32 — bf16 mean-of-squares loses too much precision.
+        input_dtype = x.dtype
+        x = x.to(torch.float32)
+        x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        return self.weight * x.to(input_dtype)
 
 
 class RotaryEmbedding(nn.Module):
@@ -92,6 +96,8 @@ class RotaryEmbedding(nn.Module):
 
     def __init__(self, head_dim: int, theta: float = 10000.0):
         super().__init__()
+        self.head_dim = head_dim
+        self.theta = theta
         inv_freq = 1.0 / (theta ** (torch.arange(0, head_dim, 2).float() / head_dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self._cos: torch.Tensor | None = None
@@ -140,11 +146,10 @@ def apply_rotary_emb(
     x:   (batch, num_heads, seq_len, head_dim)
     cos: (batch, seq_len, 1, head_dim)  — broadcast over heads
     sin: same shape as cos
-
-    We transpose cos/sin to match x's layout: (batch, 1, seq_len, head_dim).
     """
-    cos = cos.transpose(1, 2)  # → (batch, 1, seq_len, head_dim)
-    sin = sin.transpose(1, 2)
+    # Cast cos/sin to x.dtype — fp32 cos/sin would silently promote q/k.
+    cos = cos.transpose(1, 2).to(x.dtype)
+    sin = sin.transpose(1, 2).to(x.dtype)
     return x * cos + _rotate_half(x) * sin
 
 
@@ -396,23 +401,13 @@ def load_weights(
 
     logger.info("Loading %d safetensors shard(s) …", len(st_files))
 
-    # Cast model to target dtype on CPU first so load_state_dict doesn't
-    # create float32 copies (important for large models on limited VRAM)
-    model.to(dtype=dtype)
-
-    # Merge all shards into one state dict
+    # Load shards straight to the target device — avoids a full CPU copy.
     state_dict: dict[str, torch.Tensor] = {}
     for f in st_files:
-        shard = load_file(str(f), device="cpu")
-        state_dict.update(shard)
-        del shard
+        for key, tensor in load_file(str(f), device=device).items():
+            state_dict[key] = tensor.to(dtype=dtype)
 
-    # Cast to target dtype
-    for key in state_dict:
-        state_dict[key] = state_dict[key].to(dtype=dtype)
-
-    # Drop keys the model does not expect
-    # (e.g. rotary_emb.inv_freq if present in checkpoint)
+    # Drop checkpoint keys the model doesn't expect.
     model_keys = set(model.state_dict().keys())
     extra = set(state_dict.keys()) - model_keys
     for key in extra:
@@ -420,18 +415,23 @@ def load_weights(
     if extra:
         logger.info("Skipped %d unexpected checkpoint keys", len(extra))
 
-    # Handle tied embeddings: if lm_head.weight is expected but not in checkpoint
     if "lm_head.weight" in model_keys and "lm_head.weight" not in state_dict:
         logger.info("Tying lm_head.weight to embed_tokens.weight")
         state_dict["lm_head.weight"] = state_dict["model.embed_tokens.weight"]
 
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    del state_dict  # free CPU memory before GPU transfer
+    # assign=True: replace meta tensors in-place rather than copy_ into them.
+    missing, unexpected = model.load_state_dict(state_dict, strict=False, assign=True)
+    del state_dict
     if missing:
         logger.warning("Missing keys after load: %s", missing)
     if unexpected:
         logger.warning("Unexpected keys after load: %s", unexpected)
 
-    # Move to target device
-    model.to(device=device)
+    # RoPE inv_freq is a non-persistent buffer (not in checkpoint), so it's
+    # still on the meta device after assign=True — materialize it now.
+    for module in model.modules():
+        if isinstance(module, RotaryEmbedding):
+            module.inv_freq = 1.0 / (
+                module.theta ** (torch.arange(0, module.head_dim, 2, device=device, dtype=torch.float32) / module.head_dim)
+            )
     logger.info("Weights loaded — %d parameters on %s (%s)", sum(p.numel() for p in model.parameters()), device, dtype)

@@ -67,7 +67,10 @@ class Engine:
             config.tie_word_embeddings,
         )
 
-        self.model = CausalLM(config)
+        # Build on meta device — load_weights replaces parameters with
+        # GPU tensors directly, so we never allocate a CPU fp32 copy.
+        with torch.device("meta"):
+            self.model = CausalLM(config)
         load_weights(self.model, model_path, dtype=dtype, device=device)
         self.model.eval()
 

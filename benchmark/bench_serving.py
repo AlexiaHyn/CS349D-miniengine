@@ -137,6 +137,8 @@ def prepare_requests(
             ids = tokenizer.apply_chat_template(
                 messages, tokenize=True, add_generation_prompt=True,
             )
+        if hasattr(ids, "keys") and "input_ids" in ids:
+            ids = ids["input_ids"]
 
         if len(ids) > req_input_len:
             # Truncate: decode back to text from truncated ids
@@ -161,6 +163,8 @@ def prepare_requests(
                     test_ids = tokenizer.apply_chat_template(
                         msgs, tokenize=True, add_generation_prompt=True,
                     )
+                if hasattr(test_ids, "keys") and "input_ids" in test_ids:
+                    test_ids = test_ids["input_ids"]
                 if len(test_ids) >= req_input_len:
                     messages = msgs
                     actual_input_len = len(test_ids)
