@@ -44,6 +44,14 @@ def parse_args() -> argparse.Namespace:
         default=16,
         help="Max concurrent requests in the scheduler",
     )
+    p.add_argument(
+        "--mode",
+        type=str,
+        default="batched",
+        choices=["baseline", "batched"],
+        help="Scheduling mode: baseline (one request at a time) or "
+        "batched (iteration-level batching, milestone 1)",
+    )
     return p.parse_args()
 
 
@@ -58,10 +66,13 @@ def main() -> None:
     logger = logging.getLogger("miniengine")
 
     dtype = getattr(torch, args.dtype)
-    logger.info("Initializing engine  model=%s  dtype=%s", args.model, args.dtype)
+    logger.info(
+        "Initializing engine  model=%s  dtype=%s  mode=%s",
+        args.model, args.dtype, args.mode,
+    )
 
-    engine = Engine(model_path=args.model, dtype=dtype, device=args.device)
-    sched = Scheduler(engine=engine, max_running=args.max_running)
+    engine = Engine(model_path=args.model, dtype=dtype, device=args.device, mode=args.mode)
+    sched = Scheduler(engine=engine, max_running=args.max_running, mode=args.mode)
 
     # Wire up the server module globals
     srv.engine = engine

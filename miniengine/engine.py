@@ -8,14 +8,13 @@ The engine is a "black box" that the scheduler calls into.  It handles:
   4. Decode  (previous token + KV cache → next token + updated KV cache)
   5. Token sampling (delegated to sampler.py)
 
-Design note:
-  The current API is single-request (prefill / decode_step).  A natural
-  first optimisation is to add batched versions that pad sequences and run
-  multiple requests through a single forward pass.
+Two decode paths:
+  - decode_step(req)        : one request, used by baseline scheduler
+  - batched_decode(reqs)    : many requests, one forward pass with padded
+                              KV + attention mask, used by batched mode
 
-  For tensor parallelism, the bare-bone nn.Linear layers in model.py can
-  be sharded directly: Q/K/V/gate/up column-wise, O/down row-wise, with
-  an all-reduce after the row-parallel matmul.
+Prefill stays per-request — variable prompt lengths make batched prefill
+complex, and decode is where the throughput gain lives.
 """
 
 from __future__ import annotations
@@ -24,6 +23,7 @@ import logging
 from typing import Any
 
 import torch
+import torch.nn.functional as F
 from transformers import AutoTokenizer
 
 from miniengine.core import Request
@@ -34,16 +34,18 @@ logger = logging.getLogger(__name__)
 
 
 class Engine:
-    """Bare-bone model wrapper for single-request prefill and decode."""
+    """Model wrapper supporting baseline (per-request) and batched decode."""
 
     def __init__(
         self,
         model_path: str,
         dtype: torch.dtype = torch.bfloat16,
         device: str = "cuda",
+        mode: str = "batched",
     ):
         self.device = device
         self.dtype = dtype
+        self.mode = mode
 
         # ── Tokenizer (still from HF — it's just a tokenizer) ──────────
         logger.info("Loading tokenizer from %s …", model_path)
@@ -170,3 +172,81 @@ class Engine:
 
     def is_stop_token(self, token_id: int) -> bool:
         return token_id in self.stop_token_ids
+
+    # ── Batched decode ──────────────────────────────────────────────────
+
+    @torch.inference_mode()
+    def batched_decode(self, requests: list[Request]) -> list[int]:
+        """
+        Decode one token for each request in a single forward pass.
+
+        Pads per-request KV caches to the longest in the batch, builds a
+        float attention mask that ignores padding, runs the model once,
+        then extracts each request's actual KV (real prefix + new token)
+        and samples its next token.
+        """
+        if not requests:
+            return []
+
+        batch_size = len(requests)
+        num_layers = len(requests[0].kv_cache)
+
+        # Stack last generated token from each request → (batch, 1)
+        input_ids = torch.tensor(
+            [[req.output_ids[-1]] for req in requests],
+            dtype=torch.long, device=self.device,
+        )
+
+        # Each request's current KV length and the per-request RoPE position
+        cache_lens = [req.kv_cache[0][0].shape[2] for req in requests]
+        max_cache_len = max(cache_lens)
+        position_ids = torch.tensor(
+            [[cl] for cl in cache_lens], dtype=torch.long, device=self.device,
+        )
+
+        # Pad and stack KV caches per layer to (batch, kv_heads, max_cache_len, head_dim)
+        padded_kv_caches: list[tuple[torch.Tensor, torch.Tensor]] = []
+        for layer_idx in range(num_layers):
+            k_list, v_list = [], []
+            for req in requests:
+                k, v = req.kv_cache[layer_idx]
+                pad_len = max_cache_len - k.shape[2]
+                if pad_len > 0:
+                    k = F.pad(k, (0, 0, 0, pad_len))
+                    v = F.pad(v, (0, 0, 0, pad_len))
+                k_list.append(k)
+                v_list.append(v)
+            padded_kv_caches.append((torch.cat(k_list, dim=0), torch.cat(v_list, dim=0)))
+
+        # Mask shape (batch, 1, 1, max_cache_len + 1): the attention forward
+        # appends the new token to the cache, so kv_len = max_cache_len + 1.
+        # Mask only the padding window [cl, max_cache_len) per request.
+        attention_mask = torch.zeros(
+            batch_size, 1, 1, max_cache_len + 1,
+            device=self.device, dtype=self.dtype,
+        )
+        for i, cl in enumerate(cache_lens):
+            attention_mask[i, 0, 0, cl:max_cache_len] = float("-inf")
+
+        logits, new_kv_caches = self.model(
+            input_ids, position_ids,
+            kv_caches=padded_kv_caches,
+            attention_mask=attention_mask,
+        )
+
+        # Extract each request's real KV (actual prefix + new token at -1).
+        token_ids: list[int] = []
+        for i, req in enumerate(requests):
+            cl = cache_lens[i]
+            per_req_kv = []
+            for layer_idx in range(num_layers):
+                k_full = new_kv_caches[layer_idx][0][i : i + 1]
+                v_full = new_kv_caches[layer_idx][1][i : i + 1]
+                k_new = torch.cat([k_full[:, :, :cl, :], k_full[:, :, -1:, :]], dim=2)
+                v_new = torch.cat([v_full[:, :, :cl, :], v_full[:, :, -1:, :]], dim=2)
+                per_req_kv.append((k_new, v_new))
+            req.kv_cache = per_req_kv
+            token_ids.append(sample_token(
+                logits[i : i + 1, -1, :], req.sampling_params, req.output_ids
+            ))
+        return token_ids
