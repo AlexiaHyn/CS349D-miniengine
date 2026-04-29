@@ -118,7 +118,9 @@ class RotaryEmbedding(nn.Module):
 
         if self._cos is None or max_pos > self._cached_len:
             length = max(max_pos, self._cached_len * 2, 256)
-            t = torch.arange(length, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
+            t = torch.arange(
+                length, device=self.inv_freq.device, dtype=self.inv_freq.dtype
+            )
             freqs = torch.outer(t, self.inv_freq)  # (length, head_dim/2)
             emb = torch.cat([freqs, freqs], dim=-1)  # (length, head_dim)
             self._cos = emb.cos()
@@ -174,10 +176,18 @@ class Attention(nn.Module):
         self.head_dim = config.head_dim
         self.num_kv_groups = self.num_heads // self.num_kv_heads
 
-        self.q_proj = nn.Linear(config.hidden_size, self.num_heads * self.head_dim, bias=False)
-        self.k_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
-        self.v_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, config.hidden_size, bias=False)
+        self.q_proj = nn.Linear(
+            config.hidden_size, self.num_heads * self.head_dim, bias=False
+        )
+        self.k_proj = nn.Linear(
+            config.hidden_size, self.num_kv_heads * self.head_dim, bias=False
+        )
+        self.v_proj = nn.Linear(
+            config.hidden_size, self.num_kv_heads * self.head_dim, bias=False
+        )
+        self.o_proj = nn.Linear(
+            self.num_heads * self.head_dim, config.hidden_size, bias=False
+        )
 
         # Qwen3: RMSNorm on Q and K after projection (per-head)
         self.q_norm = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
@@ -208,9 +218,21 @@ class Attention(nn.Module):
         bsz, seq_len, _ = hidden.shape
 
         # Project Q, K, V and reshape to (batch, heads, seq_len, head_dim)
-        q = self.q_proj(hidden).view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        k = self.k_proj(hidden).view(bsz, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
-        v = self.v_proj(hidden).view(bsz, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
+        q = (
+            self.q_proj(hidden)
+            .view(bsz, seq_len, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+        k = (
+            self.k_proj(hidden)
+            .view(bsz, seq_len, self.num_kv_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+        v = (
+            self.v_proj(hidden)
+            .view(bsz, seq_len, self.num_kv_heads, self.head_dim)
+            .transpose(1, 2)
+        )
 
         # QK-Norm
         q = self.q_norm(q)
@@ -254,9 +276,15 @@ class MLP(nn.Module):
 
     def __init__(self, config: ModelConfig):
         super().__init__()
-        self.gate_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)
-        self.up_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)
-        self.down_proj = nn.Linear(config.intermediate_size, config.hidden_size, bias=False)
+        self.gate_proj = nn.Linear(
+            config.hidden_size, config.intermediate_size, bias=False
+        )
+        self.up_proj = nn.Linear(
+            config.hidden_size, config.intermediate_size, bias=False
+        )
+        self.down_proj = nn.Linear(
+            config.intermediate_size, config.hidden_size, bias=False
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
@@ -273,7 +301,9 @@ class TransformerBlock(nn.Module):
         self.self_attn = Attention(config)
         self.mlp = MLP(config)
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps
+        )
 
     def forward(
         self,
@@ -368,7 +398,9 @@ class CausalLM(nn.Module):
             logits:        (batch, seq_len, vocab_size)
             new_kv_caches: per-layer KV caches
         """
-        hidden, new_kv_caches = self.model(input_ids, position_ids, kv_caches, attention_mask)
+        hidden, new_kv_caches = self.model(
+            input_ids, position_ids, kv_caches, attention_mask
+        )
         if self.config.tie_word_embeddings:
             logits = F.linear(hidden, self.model.embed_tokens.weight)
         else:
@@ -444,6 +476,17 @@ def load_weights(
     for module in model.modules():
         if isinstance(module, RotaryEmbedding):
             module.inv_freq = 1.0 / (
-                module.theta ** (torch.arange(0, module.head_dim, 2, device=device, dtype=torch.float32) / module.head_dim)
+                module.theta
+                ** (
+                    torch.arange(
+                        0, module.head_dim, 2, device=device, dtype=torch.float32
+                    )
+                    / module.head_dim
+                )
             )
-    logger.info("Weights loaded — %d parameters on %s (%s)", sum(p.numel() for p in model.parameters()), device, dtype)
+    logger.info(
+        "Weights loaded — %d parameters on %s (%s)",
+        sum(p.numel() for p in model.parameters()),
+        device,
+        dtype,
+    )

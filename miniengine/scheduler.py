@@ -147,7 +147,9 @@ class Scheduler:
         # ── Phase 1: admit + prefill ────────────────────────────────────
         with self._lock:
             to_prefill: list[Request] = []
-            while self.waiting and len(self.running) + len(to_prefill) < self.max_running:
+            while (
+                self.waiting and len(self.running) + len(to_prefill) < self.max_running
+            ):
                 to_prefill.append(self.waiting.popleft())
 
         for req in to_prefill:
@@ -188,7 +190,9 @@ class Scheduler:
     def _stream_token(self, req: Request, token_id: int) -> None:
         """Push a generated token into the request's streaming queue."""
         text = self.engine.decode_token(token_id)
-        req.token_queue.put(TokenOutput(token_id=token_id, token_text=text, finished=False))
+        req.token_queue.put(
+            TokenOutput(token_id=token_id, token_text=text, finished=False)
+        )
 
     def _finish_request(self, req: Request, finished_list: list[Request]) -> None:
         """Mark a request as finished and free its resources."""

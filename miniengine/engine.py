@@ -163,7 +163,9 @@ class Engine:
         cache_len = request.kv_cache[0][0].shape[2]  # layer 0, key tensor, seq dim
         position_ids = torch.tensor([[cache_len]], device=self.device)
 
-        logits, kv_caches = self.model(input_ids, position_ids, kv_caches=request.kv_cache)
+        logits, kv_caches = self.model(
+            input_ids, position_ids, kv_caches=request.kv_cache
+        )
         request.kv_cache = kv_caches
 
         return sample_token(
@@ -194,14 +196,17 @@ class Engine:
         # Stack last generated token from each request → (batch, 1)
         input_ids = torch.tensor(
             [[req.output_ids[-1]] for req in requests],
-            dtype=torch.long, device=self.device,
+            dtype=torch.long,
+            device=self.device,
         )
 
         # Each request's current KV length and the per-request RoPE position
         cache_lens = [req.kv_cache[0][0].shape[2] for req in requests]
         max_cache_len = max(cache_lens)
         position_ids = torch.tensor(
-            [[cl] for cl in cache_lens], dtype=torch.long, device=self.device,
+            [[cl] for cl in cache_lens],
+            dtype=torch.long,
+            device=self.device,
         )
 
         # Pad and stack KV caches per layer to (batch, kv_heads, max_cache_len, head_dim)
@@ -216,20 +221,27 @@ class Engine:
                     v = F.pad(v, (0, 0, 0, pad_len))
                 k_list.append(k)
                 v_list.append(v)
-            padded_kv_caches.append((torch.cat(k_list, dim=0), torch.cat(v_list, dim=0)))
+            padded_kv_caches.append(
+                (torch.cat(k_list, dim=0), torch.cat(v_list, dim=0))
+            )
 
         # Mask shape (batch, 1, 1, max_cache_len + 1): the attention forward
         # appends the new token to the cache, so kv_len = max_cache_len + 1.
         # Mask only the padding window [cl, max_cache_len) per request.
         attention_mask = torch.zeros(
-            batch_size, 1, 1, max_cache_len + 1,
-            device=self.device, dtype=self.dtype,
+            batch_size,
+            1,
+            1,
+            max_cache_len + 1,
+            device=self.device,
+            dtype=self.dtype,
         )
         for i, cl in enumerate(cache_lens):
             attention_mask[i, 0, 0, cl:max_cache_len] = float("-inf")
 
         logits, new_kv_caches = self.model(
-            input_ids, position_ids,
+            input_ids,
+            position_ids,
             kv_caches=padded_kv_caches,
             attention_mask=attention_mask,
         )
@@ -246,7 +258,9 @@ class Engine:
                 v_new = torch.cat([v_full[:, :, :cl, :], v_full[:, :, -1:, :]], dim=2)
                 per_req_kv.append((k_new, v_new))
             req.kv_cache = per_req_kv
-            token_ids.append(sample_token(
-                logits[i : i + 1, -1, :], req.sampling_params, req.output_ids
-            ))
+            token_ids.append(
+                sample_token(
+                    logits[i : i + 1, -1, :], req.sampling_params, req.output_ids
+                )
+            )
         return token_ids
