@@ -130,12 +130,16 @@ def prepare_requests(
         messages = [{"role": "user", "content": raw_prompt}]
         try:
             ids = tokenizer.apply_chat_template(
-                messages, tokenize=True, add_generation_prompt=True,
+                messages,
+                tokenize=True,
+                add_generation_prompt=True,
                 enable_thinking=False,
             )
         except TypeError:
             ids = tokenizer.apply_chat_template(
-                messages, tokenize=True, add_generation_prompt=True,
+                messages,
+                tokenize=True,
+                add_generation_prompt=True,
             )
         if hasattr(ids, "keys") and "input_ids" in ids:
             ids = ids["input_ids"]
@@ -156,12 +160,16 @@ def prepare_requests(
                 msgs = [{"role": "user", "content": padded}]
                 try:
                     test_ids = tokenizer.apply_chat_template(
-                        msgs, tokenize=True, add_generation_prompt=True,
+                        msgs,
+                        tokenize=True,
+                        add_generation_prompt=True,
                         enable_thinking=False,
                     )
                 except TypeError:
                     test_ids = tokenizer.apply_chat_template(
-                        msgs, tokenize=True, add_generation_prompt=True,
+                        msgs,
+                        tokenize=True,
+                        add_generation_prompt=True,
                     )
                 if hasattr(test_ids, "keys") and "input_ids" in test_ids:
                     test_ids = test_ids["input_ids"]
@@ -172,12 +180,16 @@ def prepare_requests(
         else:
             actual_input_len = len(ids)
 
-        requests.append({
-            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
-            "max_tokens": req_output_len,
-            "input_len": actual_input_len,
-            "output_len": req_output_len,
-        })
+        requests.append(
+            {
+                "messages": [
+                    {"role": m["role"], "content": m["content"]} for m in messages
+                ],
+                "max_tokens": req_output_len,
+                "input_len": actual_input_len,
+                "output_len": req_output_len,
+            }
+        )
 
     return requests
 
@@ -205,7 +217,8 @@ async def send_request(
     metrics.start_time = time.perf_counter()
     try:
         async with session.post(
-            f"{base_url}/v1/chat/completions", json=payload,
+            f"{base_url}/v1/chat/completions",
+            json=payload,
         ) as resp:
             if resp.status != 200:
                 metrics.error = f"HTTP {resp.status}"
@@ -216,7 +229,7 @@ async def send_request(
                 decoded = line.decode("utf-8").strip()
                 if not decoded.startswith("data: "):
                     continue
-                data_str = decoded[len("data: "):]
+                data_str = decoded[len("data: ") :]
                 if data_str == "[DONE]":
                     break
                 try:
@@ -248,6 +261,9 @@ async def run_at_concurrency(
     for r in requests:
         await queue.put(r)
 
+    total = len(requests)
+    t_start = time.perf_counter()
+
     async def worker(session: aiohttp.ClientSession):
         while True:
             try:
@@ -256,6 +272,17 @@ async def run_at_concurrency(
                 return
             m = await send_request(session, base_url, req)
             results.append(m)
+            done = len(results)
+            elapsed = time.perf_counter() - t_start
+            tag = "ERR" if m.error else "ok"
+            print(
+                f"    [{done:>3}/{total}] {tag} "
+                f"in={m.input_len} out={m.num_output_tokens} "
+                f"ttft={(m.ttft or 0)*1000:.0f}ms "
+                f"compl={(m.completion_latency or 0)*1000:.0f}ms "
+                f"(elapsed {elapsed:.1f}s)",
+                flush=True,
+            )
 
     async with aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=600),
@@ -297,7 +324,20 @@ def print_summary_table(all_results: dict[int, list[RequestMetrics]]):
         f"{'TPOT_p50':>9}  {'TPOT_p99':>9}  "
         f"{'GenTok/s':>9}  {'OK':>4}"
     )
-    print(" " * 7 + "(ms)" + " " * 7 + "(ms)" + " " * 8 + "(ms)" + " " * 8 + "(ms)" + " " * 8 + "(ms)" + " " * 8 + "(ms)")
+    print(
+        " " * 7
+        + "(ms)"
+        + " " * 7
+        + "(ms)"
+        + " " * 8
+        + "(ms)"
+        + " " * 8
+        + "(ms)"
+        + " " * 8
+        + "(ms)"
+        + " " * 8
+        + "(ms)"
+    )
     print(f"{'-' * 100}")
 
     for conc in sorted(all_results.keys()):
@@ -308,7 +348,9 @@ def print_summary_table(all_results: dict[int, list[RequestMetrics]]):
             continue
 
         ttfts = np.array([r.ttft for r in ok if r.ttft is not None])
-        completions = np.array([r.completion_latency for r in ok if r.completion_latency is not None])
+        completions = np.array(
+            [r.completion_latency for r in ok if r.completion_latency is not None]
+        )
         tpots = np.array([r.tpot for r in ok if r.tpot is not None])
         total_out = sum(r.num_output_tokens for r in ok)
         total_time = max(r.end_time for r in ok) - min(r.start_time for r in ok)
@@ -333,8 +375,8 @@ async def async_main(args, requests_pool, concurrencies):
     all_results: dict[int, list[RequestMetrics]] = {}
 
     for conc in concurrencies:
-        # Use a fresh copy of requests each time
-        reqs = requests_pool[:args.num_requests]
+        n = args.num_requests if args.num_requests is not None else max(conc * 2, 8)
+        reqs = requests_pool[:n]
         print(f"\n  Running concurrency={conc} ({len(reqs)} requests)...", flush=True)
 
         t0 = time.perf_counter()
@@ -345,11 +387,15 @@ async def async_main(args, requests_pool, concurrencies):
 
         ok = [r for r in results if r.error is None]
         ttfts = np.array([r.ttft for r in ok if r.ttft is not None])
-        completions = np.array([r.completion_latency for r in ok if r.completion_latency is not None])
+        completions = np.array(
+            [r.completion_latency for r in ok if r.completion_latency is not None]
+        )
         tpots = np.array([r.tpot for r in ok if r.tpot is not None])
         total_out = sum(r.num_output_tokens for r in ok)
 
-        print_single_result(conc, len(ok), total_time, ttfts, completions, tpots, total_out)
+        print_single_result(
+            conc, len(ok), total_time, ttfts, completions, tpots, total_out
+        )
 
     print_summary_table(all_results)
 
@@ -357,40 +403,71 @@ async def async_main(args, requests_pool, concurrencies):
 def main():
     p = argparse.ArgumentParser(description="Serving benchmark (throughput + latency)")
     p.add_argument("--base-url", type=str, default="http://localhost:8000")
-    p.add_argument("--model", type=str, default=None,
-                   help="HuggingFace model id (for tokenizer). Auto-detected from server if not set.")
-    p.add_argument("--num-requests", type=int, default=100)
-    p.add_argument("--input-len", type=int, default=1024,
-                   help="Target input length in tokens")
-    p.add_argument("--output-len", type=int, default=1024,
-                   help="Target output length in tokens")
-    p.add_argument("--randomness", type=float, default=1.0,
-                   help="Length randomness: 1.0=fixed, 0.0=uniform [1,target], 0.5=[target/2,target]")
-    p.add_argument("--concurrencies", type=str, default="1,2,4,8,16,32",
-                   help="Comma-separated concurrency levels to sweep")
+    p.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="HuggingFace model id (for tokenizer). Auto-detected from server if not set.",
+    )
+    p.add_argument(
+        "--num-requests",
+        type=int,
+        default=None,
+        help="Default: max(concurrency * 2, 8) per level",
+    )
+    p.add_argument(
+        "--input-len", type=int, default=1024, help="Target input length in tokens"
+    )
+    p.add_argument(
+        "--output-len", type=int, default=512, help="Target output length in tokens"
+    )
+    p.add_argument(
+        "--randomness",
+        type=float,
+        default=0.5,
+        help="Length randomness: 1.0=fixed, 0.0=uniform [1,target], 0.5=[target/2,target]",
+    )
+    p.add_argument(
+        "--concurrencies",
+        type=str,
+        default="1,2,4,8,16,32",
+        help="Comma-separated concurrency levels to sweep",
+    )
     p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
 
     random.seed(args.seed)
     concurrencies = [int(x) for x in args.concurrencies.split(",")]
+    pool_size = (
+        args.num_requests
+        if args.num_requests is not None
+        else max(max(concurrencies) * 2, 8)
+    )
 
     # Auto-detect model from server
     model_id = args.model
     if model_id is None:
         import requests as req_lib
+
         try:
             resp = req_lib.get(f"{args.base_url}/v1/models", timeout=5)
             model_id = resp.json()["data"][0]["id"]
             print(f"  Auto-detected model: {model_id}", flush=True)
         except Exception:
-            print("  ERROR: Could not detect model from server. Use --model to specify.", flush=True)
+            print(
+                "  ERROR: Could not detect model from server. Use --model to specify.",
+                flush=True,
+            )
             sys.exit(1)
 
     print(f"\n{'=' * 60}")
     print(f"  Serving Benchmark")
     print(f"  Server       : {args.base_url}")
     print(f"  Model        : {model_id}")
-    print(f"  Requests     : {args.num_requests}")
+    if args.num_requests is not None:
+        print(f"  Requests     : {args.num_requests} (per concurrency)")
+    else:
+        print(f"  Requests     : max(conc*2, 8) per concurrency")
     print(f"  Input len    : {args.input_len}")
     print(f"  Output len   : {args.output_len}")
     print(f"  Randomness   : {args.randomness}")
@@ -400,16 +477,21 @@ def main():
     # Load tokenizer
     print("\n  Loading tokenizer...", flush=True)
     from transformers import AutoTokenizer
+
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
     # Load prompts from WildChat
-    prompts = load_wildchat_prompts(args.num_requests)
+    prompts = load_wildchat_prompts(pool_size)
 
     # Prepare requests with controlled lengths
-    print(f"  Preparing {args.num_requests} requests...", flush=True)
+    print(f"  Preparing {pool_size} requests...", flush=True)
     requests_pool = prepare_requests(
-        prompts, tokenizer, args.num_requests,
-        args.input_len, args.output_len, args.randomness,
+        prompts,
+        tokenizer,
+        pool_size,
+        args.input_len,
+        args.output_len,
+        args.randomness,
     )
     actual_in = [r["input_len"] for r in requests_pool]
     actual_out = [r["output_len"] for r in requests_pool]

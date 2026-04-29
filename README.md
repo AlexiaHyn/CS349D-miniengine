@@ -21,7 +21,8 @@ The engine serves an OpenAI-compatible API and is structured so that the **sched
 | Module | File | Role |
 |--------|------|------|
 | **core** | `miniengine/core.py` | Data structures: `Request`, `SamplingParams`, `TokenOutput` |
-| **engine** | `miniengine/engine.py` | HuggingFace model wrapper — prefill, decode, tokenize |
+| **model** | `miniengine/model.py` | Bare-bone Qwen3 in pure PyTorch (GQA + RoPE + SwiGLU); loads HF safetensors directly |
+| **engine** | `miniengine/engine.py` | Wraps `model.CausalLM` — tokenize, prefill, per-request and batched decode |
 | **sampler** | `miniengine/sampler.py` | Top-k / top-p / temperature / repetition-penalty sampling |
 | **scheduler** | `miniengine/scheduler.py` | Request scheduling loop (**optimization target**) |
 | **server** | `miniengine/server.py` | OpenAI-compatible FastAPI server with SSE streaming |
@@ -57,7 +58,7 @@ sampled from [WildChat](https://huggingface.co/datasets/allenai/WildChat-1M)
 and truncated/padded to the target input length.
 
 ```bash
-# Default: 1024 in/out, sweep concurrency 1→32, 100 requests
+# Default: 1024 in / 512 out, randomness 0.5, sweep concurrency 1→32
 python -m benchmark.bench_serving
 
 # Custom lengths and randomness
@@ -72,10 +73,10 @@ python -m benchmark.bench_serving --concurrencies 1,4,16 --num-requests 50
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--input-len` | 1024 | Target input length (tokens) |
-| `--output-len` | 1024 | Target output length (tokens) |
-| `--randomness` | 1.0 | Length randomness: `1.0` = all requests use exact target lengths; `0.0` = uniform random from `[1, target]`; `0.5` = uniform from `[target/2, target]` |
+| `--output-len` | 512 | Target output length (tokens) |
+| `--randomness` | 0.5 | Length randomness: `1.0` = all requests use exact target lengths; `0.0` = uniform random from `[1, target]`; `0.5` = uniform from `[target/2, target]` |
 | `--concurrencies` | 1,2,4,8,16,32 | Concurrency levels to sweep |
-| `--num-requests` | 100 | Total requests per concurrency level |
+| `--num-requests` | auto: `max(conc*2, 8)` per level | Total requests per concurrency level |
 
 **Reports per concurrency level:** TTFT p50/p99, completion latency p50/p99, TPOT p50/p99, generation throughput (tok/s).
 
