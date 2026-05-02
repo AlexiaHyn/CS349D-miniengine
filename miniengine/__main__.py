@@ -46,9 +46,41 @@ def parse_args() -> argparse.Namespace:
         "--mode",
         type=str,
         default="batched",
-        choices=["baseline", "batched"],
-        help="Scheduling mode: baseline (one request at a time) or "
-        "batched (iteration-level batching, milestone 1)",
+        choices=["baseline", "batched", "paged"],
+        help="Scheduling mode: baseline (one request at a time), "
+        "batched (iteration-level batching, milestone 1), or "
+        "paged (pre-allocated paged KV pool + packed prefill, milestone 2)",
+    )
+    # ── Milestone 2 flags ───────────────────────────────────────────────
+    p.add_argument(
+        "--page-size",
+        type=int,
+        default=32,
+        help="Tokens per KV page (paged mode only).",
+    )
+    p.add_argument(
+        "--mem-fraction-static",
+        type=float,
+        default=0.85,
+        help="Fraction of total GPU memory pre-allocated for static "
+        "tensors (model weights + KV pool).",
+    )
+    p.add_argument(
+        "--torch-compile",
+        action="store_true",
+        help="Compile each TransformerBlock with torch.compile.",
+    )
+    p.add_argument(
+        "--cuda-graph",
+        action="store_true",
+        help="Enable manual CUDA graph capture for paged decode "
+        "(extra credit; requires --mode paged).",
+    )
+    p.add_argument(
+        "--cuda-graph-batch-sizes",
+        type=str,
+        default="1,2,4,8,16,32",
+        help="Comma-separated bucket sizes for CUDA graph capture.",
     )
     return p.parse_args()
 
@@ -71,8 +103,22 @@ def main() -> None:
         args.mode,
     )
 
+    cuda_graph_buckets: list[int] = []
+    if args.cuda_graph_batch_sizes:
+        cuda_graph_buckets = [
+            int(x) for x in args.cuda_graph_batch_sizes.split(",") if x.strip()
+        ]
+
     engine = Engine(
-        model_path=args.model, dtype=dtype, device=args.device, mode=args.mode
+        model_path=args.model,
+        dtype=dtype,
+        device=args.device,
+        mode=args.mode,
+        page_size=args.page_size,
+        mem_fraction_static=args.mem_fraction_static,
+        torch_compile=args.torch_compile,
+        cuda_graph=args.cuda_graph,
+        cuda_graph_batch_sizes=cuda_graph_buckets,
     )
     sched = Scheduler(engine=engine, max_running=args.max_running, mode=args.mode)
 

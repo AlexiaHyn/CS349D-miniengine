@@ -11,13 +11,19 @@ Architecture (Qwen3-4B as reference):
         RMSNorm → Attention(GQA + QK-Norm + RoPE) → RMSNorm → SwiGLU MLP
     RMSNorm
     LM Head (tied with embedding)
+
+Paged-attention extension (Milestone 2):
+    Each Attention.forward optionally takes a `paged_ctx` PagedAttnCtx
+    that points at the global KV pool (per-layer K/V slabs) plus per-
+    request page tables. When supplied, attention writes new K/V into
+    the pool by slot, and reads the per-request KV by gathering pages.
 """
 
 from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import torch
@@ -155,6 +161,172 @@ def apply_rotary_emb(
     return x * cos + _rotate_half(x) * sin
 
 
+# ── Paged attention support ─────────────────────────────────────────────
+
+
+@dataclass
+class PagedAttnCtx:
+    """Per-step context for paged attention.
+
+    Fields are layer-agnostic (page_indices/lengths/slot_mapping describe
+    where each token lives in the pool); the layer index selects the
+    right slab from `kv_caches`.
+
+    Attributes
+    ----------
+    kv_caches:
+        The pool's stable per-layer (K, V) tensors.
+        Shape per slab: (num_pages, page_size, num_kv_heads, head_dim).
+    page_size:
+        Tokens per page (matches the pool).
+    page_indices:
+        Padded int32 tensor of shape (batch, max_num_pages). For
+        request i its first lengths[i]/page_size+1 entries are valid.
+    lengths_after:
+        int32 tensor (batch,) — KV length AFTER writing the new tokens
+        from this forward (= old length + new tokens for that request).
+    slot_mapping:
+        int64 tensor (total_new_tokens,) — flat slot indices into a
+        per-layer K (or V) viewed as (num_pages * page_size, kv_heads,
+        head_dim). One entry per *new* token in execution order.
+        Used to write fresh K/V into the pool.
+    cu_seqlens_q:
+        Optional int32 tensor (batch + 1,) cumulative query lengths.
+        Provided by packed prefill (batch dim is collapsed). None for
+        decode (single-token-per-request, packed in sequence dim).
+    is_decode:
+        True if every request contributes exactly one new query token.
+        Decode can use a tighter attention path (no causal mask within
+        the new tokens).
+    """
+
+    kv_caches: list[tuple[torch.Tensor, torch.Tensor]]
+    page_size: int
+    page_indices: torch.Tensor
+    lengths_after: torch.Tensor
+    slot_mapping: torch.Tensor
+    cu_seqlens_q: torch.Tensor | None = None
+    is_decode: bool = False
+
+
+def _paged_attn_forward(
+    q: torch.Tensor,                # (1, num_heads, total_q, head_dim) packed
+    k_new: torch.Tensor,            # (1, num_kv_heads, total_q, head_dim) packed
+    v_new: torch.Tensor,            # (1, num_kv_heads, total_q, head_dim) packed
+    paged_ctx: PagedAttnCtx,
+    layer_idx: int,
+    num_kv_groups: int,
+) -> torch.Tensor:
+    """Paged attention: write new K/V into pool, then attend per request.
+
+    Returns out: (1, num_heads, total_q, head_dim) packed.
+    """
+    K_pool, V_pool = paged_ctx.kv_caches[layer_idx]
+    num_pages, page_size, num_kv_heads, head_dim = K_pool.shape
+
+    # Flat views into the per-layer slab so we can scatter by slot index.
+    K_flat = K_pool.view(num_pages * page_size, num_kv_heads, head_dim)
+    V_flat = V_pool.view(num_pages * page_size, num_kv_heads, head_dim)
+
+    # k_new/v_new are (1, kv_heads, total_q, head_dim) — flatten over the
+    # token axis to (total_q, kv_heads, head_dim) for scatter.
+    total_q = k_new.shape[2]
+    k_pack = k_new.squeeze(0).transpose(0, 1).contiguous()  # (total_q, kv_heads, head_dim)
+    v_pack = v_new.squeeze(0).transpose(0, 1).contiguous()
+
+    K_flat.index_copy_(0, paged_ctx.slot_mapping, k_pack)
+    V_flat.index_copy_(0, paged_ctx.slot_mapping, v_pack)
+
+    # ── Per-request attention via gather of full KV history ────────────
+    batch = paged_ctx.page_indices.shape[0]
+    # cu_seqlens_q tells us where each request's queries live in `q`.
+    # For decode, every request has exactly 1 new token, so
+    # cu_seqlens_q = [0, 1, 2, …, batch].
+    if paged_ctx.cu_seqlens_q is not None:
+        cu_q = paged_ctx.cu_seqlens_q
+    else:
+        cu_q = torch.arange(batch + 1, device=q.device, dtype=torch.int32)
+
+    num_heads = q.shape[1]
+    out_pack = torch.empty(
+        total_q, num_heads, head_dim, device=q.device, dtype=q.dtype
+    )
+    # q_pack: (total_q, num_heads, head_dim)
+    q_pack = q.squeeze(0).transpose(0, 1).contiguous()
+
+    lengths_after = paged_ctx.lengths_after.tolist()
+    cu_q_list = cu_q.tolist()
+    page_indices = paged_ctx.page_indices  # (batch, max_pages)
+
+    for i in range(batch):
+        q_start = cu_q_list[i]
+        q_end = cu_q_list[i + 1]
+        q_len = q_end - q_start
+        if q_len == 0:
+            continue
+
+        kv_len = lengths_after[i]
+        if kv_len == 0:
+            # nothing to attend over (shouldn't happen because q itself
+            # contributes ≥1 to length_after, but be defensive).
+            out_pack[q_start:q_end] = 0
+            continue
+
+        # Gather this request's pages: (num_pages_i, page_size, kv_heads, head_dim)
+        n_pages = (kv_len + page_size - 1) // page_size
+        idx = page_indices[i, :n_pages]
+        gathered_k = K_pool.index_select(0, idx)  # (n, page, kv, hd)
+        gathered_v = V_pool.index_select(0, idx)
+        # Flatten pages → tokens, then trim to actual length.
+        k_seq = gathered_k.reshape(n_pages * page_size, num_kv_heads, head_dim)[:kv_len]
+        v_seq = gathered_v.reshape(n_pages * page_size, num_kv_heads, head_dim)[:kv_len]
+
+        # Reshape for SDPA: (1, num_heads, seq, head_dim).
+        k_seq = k_seq.transpose(0, 1).unsqueeze(0)  # (1, kv_heads, kv_len, hd)
+        v_seq = v_seq.transpose(0, 1).unsqueeze(0)
+
+        if num_kv_groups > 1:
+            k_seq = (
+                k_seq[:, :, None, :, :]
+                .expand(-1, -1, num_kv_groups, -1, -1)
+                .reshape(1, num_kv_heads * num_kv_groups, kv_len, head_dim)
+            )
+            v_seq = (
+                v_seq[:, :, None, :, :]
+                .expand(-1, -1, num_kv_groups, -1, -1)
+                .reshape(1, num_kv_heads * num_kv_groups, kv_len, head_dim)
+            )
+
+        # q for this request: (q_len, num_heads, hd) → (1, num_heads, q_len, hd)
+        q_i = q_pack[q_start:q_end].transpose(0, 1).unsqueeze(0)
+
+        if q_len == 1:
+            # Single-token decode — no causal mask needed.
+            out_i = F.scaled_dot_product_attention(q_i, k_seq, v_seq, is_causal=False)
+        else:
+            # Prefill (or chunked prefill) — last `q_len` queries attend
+            # to the *last* `kv_len` keys causally. Build a (q_len, kv_len)
+            # mask: row r corresponds to absolute position
+            # (kv_len - q_len + r); it can attend to positions ≤ that.
+            offset = kv_len - q_len
+            row = torch.arange(q_len, device=q.device).unsqueeze(1) + offset
+            col = torch.arange(kv_len, device=q.device).unsqueeze(0)
+            mask = torch.where(
+                col <= row,
+                torch.zeros((), dtype=q.dtype, device=q.device),
+                torch.full((), float("-inf"), dtype=q.dtype, device=q.device),
+            )
+            out_i = F.scaled_dot_product_attention(
+                q_i, k_seq, v_seq, attn_mask=mask
+            )
+
+        # (1, num_heads, q_len, hd) → (q_len, num_heads, hd)
+        out_pack[q_start:q_end] = out_i.squeeze(0).transpose(0, 1)
+
+    # Reshape back to (1, num_heads, total_q, head_dim).
+    return out_pack.transpose(0, 1).unsqueeze(0).contiguous()
+
+
 # ── Attention ───────────────────────────────────────────────────────────
 
 
@@ -200,20 +372,28 @@ class Attention(nn.Module):
         sin: torch.Tensor,
         kv_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
         attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        paged_ctx: PagedAttnCtx | None = None,
+        layer_idx: int = 0,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
         """
         Args:
-            hidden:         (batch, seq_len, hidden_size)
+            hidden:         (batch, seq_len, hidden_size). For paged mode
+                            batch=1 and seq_len = total packed tokens.
             cos, sin:       from RotaryEmbedding, broadcastable
-            kv_cache:       optional (cached_k, cached_v), each
-                            (batch, num_kv_heads, cache_len, head_dim)
+            kv_cache:       optional (cached_k, cached_v) for non-paged
+                            mode; (batch, num_kv_heads, cache_len, head_dim)
             attention_mask: optional float mask (batch, 1, q_len, kv_len)
                             for batched decode with padded KV; 0 = attend,
                             -inf = ignore.
+            paged_ctx:      if set, run paged attention through the pool
+                            instead of using the local kv_cache argument.
+            layer_idx:      this attention layer's index, used to pick the
+                            right slab from paged_ctx.kv_caches.
 
         Returns:
             output:       (batch, seq_len, hidden_size)
-            new_kv_cache: (k, v) with updated cache
+            new_kv_cache: (k, v) with updated cache, or None for paged
+                          mode (KV is stored back into the pool in place).
         """
         bsz, seq_len, _ = hidden.shape
 
@@ -242,6 +422,15 @@ class Attention(nn.Module):
         q = apply_rotary_emb(q, cos, sin)
         k = apply_rotary_emb(k, cos, sin)
 
+        # ── Paged path ──────────────────────────────────────────────────
+        if paged_ctx is not None:
+            out = _paged_attn_forward(
+                q, k, v, paged_ctx, layer_idx, self.num_kv_groups
+            )
+            out = out.transpose(1, 2).contiguous().view(bsz, seq_len, -1)
+            return self.o_proj(out), None
+
+        # ── Legacy contiguous-cache path ────────────────────────────────
         # Append to KV cache
         if kv_cache is not None:
             k = torch.cat([kv_cache[0], k], dim=2)
@@ -312,10 +501,14 @@ class TransformerBlock(nn.Module):
         sin: torch.Tensor,
         kv_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
         attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        paged_ctx: PagedAttnCtx | None = None,
+        layer_idx: int = 0,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
         residual = hidden
         hidden = self.input_layernorm(hidden)
-        hidden, new_kv = self.self_attn(hidden, cos, sin, kv_cache, attention_mask)
+        hidden, new_kv = self.self_attn(
+            hidden, cos, sin, kv_cache, attention_mask, paged_ctx, layer_idx
+        )
         hidden = residual + hidden
 
         residual = hidden
@@ -347,20 +540,33 @@ class TransformerModel(nn.Module):
         position_ids: torch.Tensor,
         kv_caches: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
         attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
+        paged_ctx: PagedAttnCtx | None = None,
+    ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]] | None]:
         """
         Args:
             input_ids:      (batch, seq_len)
             position_ids:   (batch, seq_len)
             kv_caches:      list of per-layer (key, value) caches, or None
             attention_mask: optional float mask for batched-decode SDPA
+            paged_ctx:      if set, use the paged-attention pool instead
+                            of contiguous per-request caches.
 
         Returns:
             hidden:         (batch, seq_len, hidden_size)
-            new_kv_caches:  list of per-layer (key, value) with appended tokens
+            new_kv_caches:  list of per-layer (key, value) with appended
+                            tokens, or None when paged_ctx is used
+                            (KV is stored in the pool).
         """
         hidden = self.embed_tokens(input_ids)
         cos, sin = self.rotary_emb(position_ids)
+
+        if paged_ctx is not None:
+            for i, layer in enumerate(self.layers):
+                hidden, _ = layer(
+                    hidden, cos, sin, None, None, paged_ctx, i,
+                )
+            hidden = self.norm(hidden)
+            return hidden, None
 
         new_kv_caches: list[tuple[torch.Tensor, torch.Tensor]] = []
         for i, layer in enumerate(self.layers):
@@ -392,14 +598,15 @@ class CausalLM(nn.Module):
         position_ids: torch.Tensor,
         kv_caches: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
         attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
+        paged_ctx: PagedAttnCtx | None = None,
+    ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]] | None]:
         """
         Returns:
             logits:        (batch, seq_len, vocab_size)
-            new_kv_caches: per-layer KV caches
+            new_kv_caches: per-layer KV caches, or None for paged mode.
         """
         hidden, new_kv_caches = self.model(
-            input_ids, position_ids, kv_caches, attention_mask
+            input_ids, position_ids, kv_caches, attention_mask, paged_ctx
         )
         if self.config.tie_word_embeddings:
             logits = F.linear(hidden, self.model.embed_tokens.weight)

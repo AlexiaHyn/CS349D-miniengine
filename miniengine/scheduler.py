@@ -29,13 +29,17 @@ logger = logging.getLogger(__name__)
 
 class Scheduler:
     """
-    FCFS scheduler with two modes:
+    FCFS scheduler with three modes:
 
       baseline : process one request to completion before the next.
       batched  : iteration-level batching — admit + prefill many requests,
                  then advance all running requests by one token in a
                  single batched forward pass.  New requests can join the
                  batch the same step they finish prefill.
+      paged    : same iteration-level batching, but KV lives in a
+                 pre-allocated paged pool. Admission requires free pages;
+                 prefill is *packed* (single forward over flattened
+                 prompts). Decode is paged (page-table indexed).
 
     Public API (thread-safe):
         add_request(req)   — enqueue a new request
@@ -111,6 +115,8 @@ class Scheduler:
         """
         if self.mode == "baseline":
             return self._step_baseline()
+        if self.mode == "paged":
+            return self._step_paged()
         return self._step_batched()
 
     def _step_baseline(self) -> list[Request]:
@@ -176,6 +182,61 @@ class Scheduler:
             self.running = still_running
 
         return finished
+
+    def _step_paged(self) -> list[Request]:
+        """
+        Paged-mode step:
+          Phase 1 — admit (only if pool has pages) and packed-prefill in
+                    one forward pass.
+          Phase 2 — paged decode over all running requests.
+        """
+        finished: list[Request] = []
+
+        # ── Phase 1: admit (gated by pool capacity) ─────────────────────
+        with self._lock:
+            to_prefill: list[Request] = []
+            while (
+                self.waiting and len(self.running) + len(to_prefill) < self.max_running
+            ):
+                # Peek; only admit if the engine says the pool can fit it.
+                head = self.waiting[0]
+                if not self.engine.can_admit(head):
+                    break
+                to_prefill.append(self.waiting.popleft())
+
+        if to_prefill:
+            for req in to_prefill:
+                req.status = RequestStatus.RUNNING
+            token_ids = self.engine.paged_prefill_packed(to_prefill)
+            for req, token_id in zip(to_prefill, token_ids):
+                req.output_ids.append(token_id)
+                self._stream_token(req, token_id)
+                if self._check_finished(req, token_id):
+                    self._finish_paged_request(req, finished)
+                else:
+                    self.running.append(req)
+
+        # ── Phase 2: paged decode ───────────────────────────────────────
+        if self.running:
+            token_ids = self.engine.paged_decode(self.running)
+            still_running: list[Request] = []
+            for req, token_id in zip(self.running, token_ids):
+                req.output_ids.append(token_id)
+                self._stream_token(req, token_id)
+                if self._check_finished(req, token_id):
+                    self._finish_paged_request(req, finished)
+                else:
+                    still_running.append(req)
+            self.running = still_running
+
+        return finished
+
+    def _finish_paged_request(
+        self, req: Request, finished_list: list[Request]
+    ) -> None:
+        """Like _finish_request but also returns pages to the pool."""
+        self.engine.free_request_pages(req)
+        self._finish_request(req, finished_list)
 
     # ── Helpers ─────────────────────────────────────────────────────────
 
