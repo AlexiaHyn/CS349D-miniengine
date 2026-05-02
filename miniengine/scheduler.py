@@ -29,25 +29,24 @@ logger = logging.getLogger(__name__)
 
 class Scheduler:
     """
-    Continuous-batching FCFS scheduler.
+    FCFS scheduler with two modes:
 
-    Each step() prefills any newly admitted requests (one by one) and then
-    runs a single batched decode forward pass over all running requests.
-    Finished requests are retired at step end so their slots are available
-    immediately on the next iteration.
+      baseline : process one request to completion before the next.
+      batched  : iteration-level batching — admit + prefill many requests,
+                 then advance all running requests by one token in a
+                 single batched forward pass.  New requests can join the
+                 batch the same step they finish prefill.
 
     Public API (thread-safe):
         add_request(req)   — enqueue a new request
         start()            — launch the background scheduling loop
         stop()             — gracefully shut down
-
-    Internal (called from the scheduler thread):
-        step()             — one full scheduling iteration
     """
 
-    def __init__(self, engine: Engine, max_running: int = 16):
+    def __init__(self, engine: Engine, max_running: int = 16, mode: str = "batched"):
         self.engine = engine
         self.max_running = max_running
+        self.mode = mode
 
         # Queues
         self.waiting: deque[Request] = deque()
@@ -106,64 +105,76 @@ class Scheduler:
 
     def step(self) -> list[Request]:
         """
-        One scheduling iteration — two phases:
-
-          Phase 1: admit waiting requests (up to max_running) and prefill
-                   them one by one. Each prefilled request emits its first
-                   token and joins the running set.
-          Phase 2: run a single batched decode forward pass over every
-                   running request (including those just prefilled above).
-
-        Requests that finish (hit EOS or max tokens) are retired at the end
-        of the step; their slots become available on the next iteration.
+        One scheduling iteration.  Behaviour depends on self.mode.
 
         Returns list of requests that finished in this step.
         """
+        if self.mode == "baseline":
+            return self._step_baseline()
+        return self._step_batched()
+
+    def _step_baseline(self) -> list[Request]:
+        """One request to completion per step. Maximally naive."""
         finished: list[Request] = []
 
-        # ── Phase 1: admit + prefill newly admitted requests ────────────
         with self._lock:
-            # if not self.waiting:
-            #     return finished
-            # req = self.waiting.popleft()
-            while self.waiting and len(self.running) < self.max_running:
-                req = self.waiting.popleft()
-                req.status = RequestStatus.RUNNING
-                self.running.append(req)
+            if not self.waiting:
+                return finished
+            req = self.waiting.popleft()
 
-        # ── Prefill ─────────────────────────────────────────────────────
-        # req.status = RequestStatus.RUNNING
-        # token_id = self.engine.prefill(req)
-        # req.output_ids.append(token_id)
-        # self._stream_token(req, token_id)
-        for req in self.running:
-            if req.kv_cache is None:
-                token_id = self.engine.prefill(req)
-                req.output_ids.append(token_id)
-                self._stream_token(req, token_id)
-                if self._check_finished(req,token_id):
-                    self._finish_request(req, finished)
-        self.running = [req for req in self.running if req.status == RequestStatus.RUNNING]
-        if not self.running:
-            return finished
+        req.status = RequestStatus.RUNNING
+        token_id = self.engine.prefill(req)
+        req.output_ids.append(token_id)
+        self._stream_token(req, token_id)
 
-        # ── Phase 2: batched decode over all running requests ───────────────────────────────────────
-        # while not self._check_finished(req, token_id):
-        #     token_id = self.engine.decode_step(req)
-        #     req.output_ids.append(token_id)
-        #     self._stream_token(req, token_id)
-        # self._finish_request(req, finished)
-        # return finished
-        token_ids = self.engine.batched_decode(self.running)
-        still_running = []
-        for req, token_id in zip(self.running, token_ids):
+        while not self._check_finished(req, token_id):
+            token_id = self.engine.decode_step(req)
+            req.output_ids.append(token_id)
+            self._stream_token(req, token_id)
+
+        self._finish_request(req, finished)
+        return finished
+
+    def _step_batched(self) -> list[Request]:
+        """
+        Iteration-level batched step:
+          Phase 1 — admit waiting requests and prefill them (per-request).
+          Phase 2 — batched decode: one token for every running request.
+        Newly prefilled requests join the decode batch in the same step.
+        """
+        finished: list[Request] = []
+
+        # ── Phase 1: admit + prefill ────────────────────────────────────
+        with self._lock:
+            to_prefill: list[Request] = []
+            while (
+                self.waiting and len(self.running) + len(to_prefill) < self.max_running
+            ):
+                to_prefill.append(self.waiting.popleft())
+
+        for req in to_prefill:
+            req.status = RequestStatus.RUNNING
+            token_id = self.engine.prefill(req)
             req.output_ids.append(token_id)
             self._stream_token(req, token_id)
             if self._check_finished(req, token_id):
                 self._finish_request(req, finished)
             else:
-                still_running.append(req)
-        self.running = still_running
+                self.running.append(req)
+
+        # ── Phase 2: batched decode ─────────────────────────────────────
+        if self.running:
+            token_ids = self.engine.batched_decode(self.running)
+            still_running: list[Request] = []
+            for req, token_id in zip(self.running, token_ids):
+                req.output_ids.append(token_id)
+                self._stream_token(req, token_id)
+                if self._check_finished(req, token_id):
+                    self._finish_request(req, finished)
+                else:
+                    still_running.append(req)
+            self.running = still_running
+
         return finished
 
     # ── Helpers ─────────────────────────────────────────────────────────
@@ -179,7 +190,9 @@ class Scheduler:
     def _stream_token(self, req: Request, token_id: int) -> None:
         """Push a generated token into the request's streaming queue."""
         text = self.engine.decode_token(token_id)
-        req.token_queue.put(TokenOutput(token_id=token_id, token_text=text, finished=False))
+        req.token_queue.put(
+            TokenOutput(token_id=token_id, token_text=text, finished=False)
+        )
 
     def _finish_request(self, req: Request, finished_list: list[Request]) -> None:
         """Mark a request as finished and free its resources."""

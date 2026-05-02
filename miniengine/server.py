@@ -118,15 +118,11 @@ async def chat_completions(raw: ChatCompletionRequest):
 # ── Streaming helpers ───────────────────────────────────────────────────
 
 
-async def _stream_response(
-    req: Request, model: str
-) -> AsyncGenerator[str, None]:
+async def _stream_response(req: Request, model: str) -> AsyncGenerator[str, None]:
     """Yield SSE chunks as tokens arrive from the scheduler."""
     loop = asyncio.get_event_loop()
     while True:
-        output: TokenOutput = await loop.run_in_executor(
-            None, req.token_queue.get
-        )
+        output: TokenOutput = await loop.run_in_executor(None, req.token_queue.get)
         if output.finished:
             chunk = _make_stream_chunk(
                 req.request_id, model, content="", finish_reason="stop"
@@ -143,9 +139,7 @@ async def _collect_full_response(req: Request) -> str:
     loop = asyncio.get_event_loop()
     parts: list[str] = []
     while True:
-        output: TokenOutput = await loop.run_in_executor(
-            None, req.token_queue.get
-        )
+        output: TokenOutput = await loop.run_in_executor(None, req.token_queue.get)
         if output.finished:
             break
         parts.append(output.token_text)
@@ -176,9 +170,7 @@ def _make_stream_chunk(
     }
 
 
-def _make_completion_response(
-    request_id: str, model: str, text: str
-) -> dict:
+def _make_completion_response(request_id: str, model: str, text: str) -> dict:
     return {
         "id": f"chatcmpl-{request_id}",
         "object": "chat.completion",

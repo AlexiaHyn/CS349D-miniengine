@@ -78,7 +78,11 @@ class RMSNorm(nn.Module):
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
+        # Variance in fp32 — bf16 mean-of-squares loses too much precision.
+        input_dtype = x.dtype
+        x = x.to(torch.float32)
+        x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        return self.weight * x.to(input_dtype)
 
 
 class RotaryEmbedding(nn.Module):
@@ -92,6 +96,8 @@ class RotaryEmbedding(nn.Module):
 
     def __init__(self, head_dim: int, theta: float = 10000.0):
         super().__init__()
+        self.head_dim = head_dim
+        self.theta = theta
         inv_freq = 1.0 / (theta ** (torch.arange(0, head_dim, 2).float() / head_dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self._cos: torch.Tensor | None = None
@@ -112,7 +118,9 @@ class RotaryEmbedding(nn.Module):
 
         if self._cos is None or max_pos > self._cached_len:
             length = max(max_pos, self._cached_len * 2, 256)
-            t = torch.arange(length, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
+            t = torch.arange(
+                length, device=self.inv_freq.device, dtype=self.inv_freq.dtype
+            )
             freqs = torch.outer(t, self.inv_freq)  # (length, head_dim/2)
             emb = torch.cat([freqs, freqs], dim=-1)  # (length, head_dim)
             self._cos = emb.cos()
@@ -140,11 +148,10 @@ def apply_rotary_emb(
     x:   (batch, num_heads, seq_len, head_dim)
     cos: (batch, seq_len, 1, head_dim)  — broadcast over heads
     sin: same shape as cos
-
-    We transpose cos/sin to match x's layout: (batch, 1, seq_len, head_dim).
     """
-    cos = cos.transpose(1, 2)  # → (batch, 1, seq_len, head_dim)
-    sin = sin.transpose(1, 2)
+    # Cast cos/sin to x.dtype — fp32 cos/sin would silently promote q/k.
+    cos = cos.transpose(1, 2).to(x.dtype)
+    sin = sin.transpose(1, 2).to(x.dtype)
     return x * cos + _rotate_half(x) * sin
 
 
@@ -169,10 +176,18 @@ class Attention(nn.Module):
         self.head_dim = config.head_dim
         self.num_kv_groups = self.num_heads // self.num_kv_heads
 
-        self.q_proj = nn.Linear(config.hidden_size, self.num_heads * self.head_dim, bias=False)
-        self.k_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
-        self.v_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, config.hidden_size, bias=False)
+        self.q_proj = nn.Linear(
+            config.hidden_size, self.num_heads * self.head_dim, bias=False
+        )
+        self.k_proj = nn.Linear(
+            config.hidden_size, self.num_kv_heads * self.head_dim, bias=False
+        )
+        self.v_proj = nn.Linear(
+            config.hidden_size, self.num_kv_heads * self.head_dim, bias=False
+        )
+        self.o_proj = nn.Linear(
+            self.num_heads * self.head_dim, config.hidden_size, bias=False
+        )
 
         # Qwen3: RMSNorm on Q and K after projection (per-head)
         self.q_norm = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
@@ -188,10 +203,13 @@ class Attention(nn.Module):
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """
         Args:
-            hidden:   (batch, seq_len, hidden_size)
-            cos, sin: from RotaryEmbedding, broadcastable
-            kv_cache: optional (cached_k, cached_v) each
-                      (batch, num_kv_heads, cache_len, head_dim)
+            hidden:         (batch, seq_len, hidden_size)
+            cos, sin:       from RotaryEmbedding, broadcastable
+            kv_cache:       optional (cached_k, cached_v), each
+                            (batch, num_kv_heads, cache_len, head_dim)
+            attention_mask: optional float mask (batch, 1, q_len, kv_len)
+                            for batched decode with padded KV; 0 = attend,
+                            -inf = ignore.
 
         Returns:
             output:       (batch, seq_len, hidden_size)
@@ -200,9 +218,21 @@ class Attention(nn.Module):
         bsz, seq_len, _ = hidden.shape
 
         # Project Q, K, V and reshape to (batch, heads, seq_len, head_dim)
-        q = self.q_proj(hidden).view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        k = self.k_proj(hidden).view(bsz, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
-        v = self.v_proj(hidden).view(bsz, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
+        q = (
+            self.q_proj(hidden)
+            .view(bsz, seq_len, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+        k = (
+            self.k_proj(hidden)
+            .view(bsz, seq_len, self.num_kv_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+        v = (
+            self.v_proj(hidden)
+            .view(bsz, seq_len, self.num_kv_heads, self.head_dim)
+            .transpose(1, 2)
+        )
 
         # QK-Norm
         q = self.q_norm(q)
@@ -225,9 +255,13 @@ class Attention(nn.Module):
             v = v[:, :, None, :, :].expand(-1, -1, self.num_kv_groups, -1, -1)
             v = v.reshape(bsz, self.num_heads, -1, self.head_dim)
 
-        # Scaled dot-product attention (uses Flash Attention when available)
-        is_causal = kv_cache is None and seq_len > 1 and attention_mask is None
-        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attention_mask, is_causal=is_causal)
+        # Batched decode passes an explicit float mask; otherwise fall
+        # back to the is_causal kernel path.
+        if attention_mask is not None:
+            out = F.scaled_dot_product_attention(q, k, v, attn_mask=attention_mask)
+        else:
+            is_causal = kv_cache is None and seq_len > 1
+            out = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
 
         # Merge heads → project back
         out = out.transpose(1, 2).contiguous().view(bsz, seq_len, -1)
@@ -242,9 +276,15 @@ class MLP(nn.Module):
 
     def __init__(self, config: ModelConfig):
         super().__init__()
-        self.gate_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)
-        self.up_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)
-        self.down_proj = nn.Linear(config.intermediate_size, config.hidden_size, bias=False)
+        self.gate_proj = nn.Linear(
+            config.hidden_size, config.intermediate_size, bias=False
+        )
+        self.up_proj = nn.Linear(
+            config.hidden_size, config.intermediate_size, bias=False
+        )
+        self.down_proj = nn.Linear(
+            config.intermediate_size, config.hidden_size, bias=False
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
@@ -261,7 +301,9 @@ class TransformerBlock(nn.Module):
         self.self_attn = Attention(config)
         self.mlp = MLP(config)
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps
+        )
 
     def forward(
         self,
@@ -308,9 +350,10 @@ class TransformerModel(nn.Module):
     ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
         """
         Args:
-            input_ids:    (batch, seq_len)
-            position_ids: (batch, seq_len)
-            kv_caches:    list of per-layer (key, value) caches, or None
+            input_ids:      (batch, seq_len)
+            position_ids:   (batch, seq_len)
+            kv_caches:      list of per-layer (key, value) caches, or None
+            attention_mask: optional float mask for batched-decode SDPA
 
         Returns:
             hidden:         (batch, seq_len, hidden_size)
@@ -355,7 +398,9 @@ class CausalLM(nn.Module):
             logits:        (batch, seq_len, vocab_size)
             new_kv_caches: per-layer KV caches
         """
-        hidden, new_kv_caches = self.model(input_ids, position_ids, kv_caches, attention_mask)
+        hidden, new_kv_caches = self.model(
+            input_ids, position_ids, kv_caches, attention_mask
+        )
         if self.config.tie_word_embeddings:
             logits = F.linear(hidden, self.model.embed_tokens.weight)
         else:
@@ -400,23 +445,13 @@ def load_weights(
 
     logger.info("Loading %d safetensors shard(s) …", len(st_files))
 
-    # Cast model to target dtype on CPU first so load_state_dict doesn't
-    # create float32 copies (important for large models on limited VRAM)
-    model.to(dtype=dtype)
-
-    # Merge all shards into one state dict
+    # Load shards straight to the target device — avoids a full CPU copy.
     state_dict: dict[str, torch.Tensor] = {}
     for f in st_files:
-        shard = load_file(str(f), device="cpu")
-        state_dict.update(shard)
-        del shard
+        for key, tensor in load_file(str(f), device=device).items():
+            state_dict[key] = tensor.to(dtype=dtype)
 
-    # Cast to target dtype
-    for key in state_dict:
-        state_dict[key] = state_dict[key].to(dtype=dtype)
-
-    # Drop keys the model does not expect
-    # (e.g. rotary_emb.inv_freq if present in checkpoint)
+    # Drop checkpoint keys the model doesn't expect.
     model_keys = set(model.state_dict().keys())
     extra = set(state_dict.keys()) - model_keys
     for key in extra:
@@ -424,18 +459,34 @@ def load_weights(
     if extra:
         logger.info("Skipped %d unexpected checkpoint keys", len(extra))
 
-    # Handle tied embeddings: if lm_head.weight is expected but not in checkpoint
     if "lm_head.weight" in model_keys and "lm_head.weight" not in state_dict:
         logger.info("Tying lm_head.weight to embed_tokens.weight")
         state_dict["lm_head.weight"] = state_dict["model.embed_tokens.weight"]
 
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    del state_dict  # free CPU memory before GPU transfer
+    # assign=True: replace meta tensors in-place rather than copy_ into them.
+    missing, unexpected = model.load_state_dict(state_dict, strict=False, assign=True)
+    del state_dict
     if missing:
         logger.warning("Missing keys after load: %s", missing)
     if unexpected:
         logger.warning("Unexpected keys after load: %s", unexpected)
 
-    # Move to target device
-    model.to(device=device)
-    logger.info("Weights loaded — %d parameters on %s (%s)", sum(p.numel() for p in model.parameters()), device, dtype)
+    # RoPE inv_freq is a non-persistent buffer (not in checkpoint), so it's
+    # still on the meta device after assign=True — materialize it now.
+    for module in model.modules():
+        if isinstance(module, RotaryEmbedding):
+            module.inv_freq = 1.0 / (
+                module.theta
+                ** (
+                    torch.arange(
+                        0, module.head_dim, 2, device=device, dtype=torch.float32
+                    )
+                    / module.head_dim
+                )
+            )
+    logger.info(
+        "Weights loaded — %d parameters on %s (%s)",
+        sum(p.numel() for p in model.parameters()),
+        device,
+        dtype,
+    )

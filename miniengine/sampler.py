@@ -64,9 +64,7 @@ def sample_token(
     # Top-p (nucleus) filtering
     if 0 < params.top_p < 1.0:
         sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
-        cumulative_probs = torch.cumsum(
-            torch.softmax(sorted_logits, dim=-1), dim=-1
-        )
+        cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
         # Mask tokens with cumulative prob above top_p (keep at least one)
         mask = cumulative_probs - torch.softmax(sorted_logits, dim=-1) >= params.top_p
         sorted_logits = sorted_logits.masked_fill(mask, float("-inf"))
