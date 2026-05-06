@@ -482,6 +482,7 @@ class Engine:
             is_decode=False,
         )
 
+        torch.compiler.cudagraph_mark_step_begin()
         logits, _ = self.model(input_ids, position_ids, paged_ctx=ctx)
         # logits: (1, total_q, vocab). Sample the *last* logit of each
         # request's slice → first generated token.
@@ -563,6 +564,7 @@ class Engine:
             is_decode=True,
         )
 
+        torch.compiler.cudagraph_mark_step_begin()
         logits, _ = self.model(input_ids, position_ids, paged_ctx=ctx)
         # logits: (1, batch, vocab). Sample one per request.
         token_ids: list[int] = []

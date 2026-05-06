@@ -1,5 +1,16 @@
 """Pre-allocated paged KV cache memory pool — Milestone 2, Part A.
 
+This is a SKELETON. Implement the methods below.
+
+The pool owns a fixed amount of GPU memory, divided into equal-size
+**pages**. Each page holds the KV state for `page_size` tokens for one
+layer. Requests acquire pages as their KV grows and return them when
+they finish; the cache itself never reallocates.
+
+Storage layout (page-major vs token-major, contiguous K+V vs separate,
+shape conventions, etc.) is YOUR design decision — pick something and
+document the tradeoffs.
+
 Design choices
 --------------
 
@@ -98,8 +109,6 @@ class KVMemoryPool:
         # Free list (LIFO). Reverse so we hand out pages 0,1,2,… first.
         self._free: list[int] = list(reversed(range(num_pages)))
 
-    # ── Allocation ──────────────────────────────────────────────────────
-
     def allocate(self, num_pages: int) -> list[int]:
         """Reserve `num_pages` pages and return their indices.
 
@@ -140,7 +149,6 @@ class KVMemoryPool:
         """
         return self._kv_caches
 
-    # ── Convenience: budget-driven construction ─────────────────────────
 
     @classmethod
     def from_budget(
@@ -179,7 +187,6 @@ class KVMemoryPool:
             device=device,
         )
 
-    # ── Diagnostics ─────────────────────────────────────────────────────
 
     def __repr__(self) -> str:  # pragma: no cover
         return (
