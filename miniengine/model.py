@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -110,6 +110,22 @@ class RotaryEmbedding(nn.Module):
         self._sin: torch.Tensor | None = None
         self._cached_len: int = 0
 
+    def _extend_cache(self, min_length: int) -> None:
+        length = max(min_length, self._cached_len * 2, 256)
+        t = torch.arange(
+            length, device=self.inv_freq.device, dtype=self.inv_freq.dtype
+        )
+        freqs = torch.outer(t, self.inv_freq)  # (length, head_dim/2)
+        emb = torch.cat([freqs, freqs], dim=-1)  # (length, head_dim)
+        self._cos = emb.cos()
+        self._sin = emb.sin()
+        self._cached_len = length
+
+    def warmup(self, max_seq_len: int) -> None:
+        """Pre-extend the RoPE cache so the serving hot-path never calls .item()."""
+        if max_seq_len > self._cached_len:
+            self._extend_cache(max_seq_len)
+
     @torch.no_grad()
     def forward(self, position_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -121,18 +137,8 @@ class RotaryEmbedding(nn.Module):
             broadcastable over the head dimension.
         """
         max_pos = int(position_ids.max().item()) + 1
-
         if self._cos is None or max_pos > self._cached_len:
-            length = max(max_pos, self._cached_len * 2, 256)
-            t = torch.arange(
-                length, device=self.inv_freq.device, dtype=self.inv_freq.dtype
-            )
-            freqs = torch.outer(t, self.inv_freq)  # (length, head_dim/2)
-            emb = torch.cat([freqs, freqs], dim=-1)  # (length, head_dim)
-            self._cos = emb.cos()
-            self._sin = emb.sin()
-            self._cached_len = length
-
+            self._extend_cache(max_pos)
         # Index into cache: (batch, seq_len, head_dim) → add head dim
         cos = self._cos[position_ids].unsqueeze(2)  # (batch, seq_len, 1, head_dim)
         sin = self._sin[position_ids].unsqueeze(2)

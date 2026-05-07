@@ -106,6 +106,20 @@ class Engine:
         if mode == "paged":
             self.kv_pool = self._build_kv_pool()
 
+        # ── Warm up RoPE cache ──────────────────────────────────────────
+        # Pre-populate cos/sin tables so the serving hot-path never calls
+        # position_ids.max().item() (a CPU↔GPU sync on every decode step).
+        _rope_warmup_len = (
+            min(
+                self.kv_pool.num_pages * self.kv_pool.page_size,
+                config.max_position_embeddings,
+            )
+            if self.kv_pool is not None
+            else min(config.max_position_embeddings, 8192)
+        )
+        self.model.model.rotary_emb.warmup(_rope_warmup_len)
+        logger.info("RoPE cache pre-warmed to %d positions", _rope_warmup_len)
+
         # ── Optional CUDA-graph runner for paged decode ─────────────────
         self.cuda_graph_runner = None
         if cuda_graph:
@@ -315,6 +329,19 @@ class Engine:
 
     # ── Paged-mode setup ────────────────────────────────────────────────
 
+    @staticmethod
+    def _bucket_max_pages(n: int) -> int:
+        """Round n up to the next power of 2.
+
+        Keeping page-table width at a power-of-2 boundary means the
+        compiled attention kernel only recompiles at doublings (1→2→4→…)
+        rather than on every page boundary crossing.
+        """
+        p = 1
+        while p < n:
+            p <<= 1
+        return p
+
     def _apply_torch_compile(self) -> None:
         """Compile each TransformerBlock.
 
@@ -322,11 +349,15 @@ class Engine:
         Python-level branching is the paged-vs-eager flag), so dynamo
         doesn't need to re-trace per step. Wrapping the whole model
         commonly hits dynamic-shape recompiles on the seq dim.
+
+        mode="reduce-overhead" targets exactly the small-op launch overhead
+        that dominates decode steps. dynamic=True avoids compilation storms
+        from the variable batch sizes seen across decode steps.
         """
         logger.info("Applying torch.compile to each TransformerBlock …")
         for i, block in enumerate(self.model.model.layers):
             self.model.model.layers[i] = torch.compile(
-                block, mode="default", dynamic=True, fullgraph=False
+                block, mode="reduce-overhead", dynamic=True, fullgraph=False
             )
 
     def _build_kv_pool(self) -> KVMemoryPool:
@@ -569,7 +600,10 @@ class Engine:
             lengths_after, dtype=torch.int32, device=device
         )
 
-        max_pages = max(len(pt) for pt in page_indices_list)
+        # Round up to next power of 2 so page_table width (and the derived
+        # max_kv_len inside _paged_attn_forward) only changes at doublings.
+        # This keeps compiled kernel shapes stable across page boundary crossings.
+        max_pages = self._bucket_max_pages(max(len(pt) for pt in page_indices_list))
         page_table = torch.zeros(batch, max_pages, dtype=torch.int32, device=device)
         for i, pt in enumerate(page_indices_list):
             page_table[i, : len(pt)] = torch.tensor(pt, dtype=torch.int32)
