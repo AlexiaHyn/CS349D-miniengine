@@ -326,7 +326,7 @@ class Engine:
         logger.info("Applying torch.compile to each TransformerBlock …")
         for i, block in enumerate(self.model.model.layers):
             self.model.model.layers[i] = torch.compile(
-                block, mode="reduce-overhead", dynamic=True, fullgraph=False
+                block, mode="default", dynamic=True, fullgraph=False
             )
 
     def _build_kv_pool(self) -> KVMemoryPool:
