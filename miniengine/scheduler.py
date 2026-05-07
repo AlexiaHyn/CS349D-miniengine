@@ -217,6 +217,24 @@ class Scheduler:
                     self.running.append(req)
 
         # ── Phase 2: paged decode ───────────────────────────────────────
+        # Preempt LIFO until the pool has at least one free page per running
+        # request (worst case: every request crosses a page boundary this step).
+        pool = self.engine.kv_pool
+        if pool is not None:
+            while self.running and pool.num_free < len(self.running):
+                victim = self.running.pop()
+                self.engine.free_request_pages(victim)
+                victim.status = RequestStatus.WAITING
+                with self._lock:
+                    self.waiting.appendleft(victim)
+                logger.warning(
+                    "Pool pressure: preempted request %s back to waiting "
+                    "(free=%d, running=%d)",
+                    victim.request_id,
+                    pool.num_free,
+                    len(self.running),
+                )
+
         if self.running:
             token_ids = self.engine.paged_decode(self.running)
             still_running: list[Request] = []

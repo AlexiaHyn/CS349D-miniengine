@@ -517,14 +517,21 @@ class Engine:
         lengths_after = []
         page_indices_list: list[list[int]] = []
 
+        # Phase 1: allocate all pages before touching meta.length.
+        # If any allocation fails the exception propagates before any state
+        # is mutated, so callers can safely retry or preempt.
+        old_lens: list[int] = []
         for req in requests:
             meta: PagedKVMeta = req.kv_cache  # type: ignore[assignment]
             old_len = meta.length
-            new_len = old_len + 1
-            self._allocate_pages_for(req, new_len)
-            meta.length = new_len
+            self._allocate_pages_for(req, old_len + 1)
+            old_lens.append(old_len)
 
-            # Slot for the single new token.
+        # Phase 2: all allocations succeeded — update meta and build tensors.
+        for req, old_len in zip(requests, old_lens):
+            meta = req.kv_cache  # type: ignore[assignment]
+            meta.length = old_len + 1
+
             page_local = old_len // page_size
             offset = old_len % page_size
             slot = meta.page_indices[page_local] * page_size + offset
@@ -532,7 +539,7 @@ class Engine:
 
             input_ids_list.append(req.output_ids[-1])
             position_ids_list.append(old_len)
-            lengths_after.append(new_len)
+            lengths_after.append(old_len + 1)
             page_indices_list.append(list(meta.page_indices))
 
         batch = len(requests)
