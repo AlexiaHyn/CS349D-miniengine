@@ -483,14 +483,27 @@ class Engine:
         )
 
         torch.compiler.cudagraph_mark_step_begin()
-        logits, _ = self.model(input_ids, position_ids, paged_ctx=ctx)
-        # logits: (1, total_q, vocab). Sample the *last* logit of each
-        # request's slice → first generated token.
+        # Run only the transformer body to get hidden states; avoid computing
+        # lm_head over all total_tokens (= total_prompts × prompt_len) which
+        # OOMs at high concurrency (shape: total_tokens × vocab_size).
+        hidden, _ = self.model.model(input_ids, position_ids, paged_ctx=ctx)
+        # hidden: (1, total_q, hidden_size). Extract only the last-token
+        # hidden state of each request, then run lm_head on just batch tokens.
+        last_indices = torch.tensor(
+            [cu_seqlens_q[i + 1] - 1 for i in range(len(requests))],
+            dtype=torch.long,
+            device=device,
+        )
+        hidden_last = hidden[0, last_indices]  # (batch, hidden_size)
+        if self.model.config.tie_word_embeddings:
+            logits_batch = F.linear(hidden_last, self.model.model.embed_tokens.weight)
+        else:
+            logits_batch = self.model.lm_head(hidden_last)
+        # logits_batch: (batch, vocab_size)
         token_ids: list[int] = []
         for i, req in enumerate(requests):
-            last_idx = cu_seqlens_q[i + 1] - 1
             tok = sample_token(
-                logits[:, last_idx, :], req.sampling_params, req.output_ids
+                logits_batch[i : i + 1], req.sampling_params, req.output_ids
             )
             token_ids.append(tok)
         return token_ids

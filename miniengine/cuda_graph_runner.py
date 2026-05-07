@@ -208,6 +208,12 @@ class CudaGraphRunner:
         pool = engine.kv_pool
         page_size = pool.page_size
 
+        # Fall back to eager if any request's page table exceeds the captured size.
+        for req in requests:
+            meta = req.kv_cache
+            if meta is not None and len(meta.page_indices) > bg.max_pages:
+                return None
+
         # Build inputs into the persistent buffers. Pad up to `bucket`
         # by replicating the first request's tensors (their outputs go
         # unused).
