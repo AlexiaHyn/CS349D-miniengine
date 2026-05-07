@@ -220,110 +220,152 @@ def _paged_attn_forward(
     """Paged attention: write new K/V into pool, then attend per request.
 
     Returns out: (1, num_heads, total_q, head_dim) packed.
+
+    Two internal paths share the same write step but differ in how they read:
+
+    Decode (is_decode=True):
+        Fully batched, fixed-shape — no Python branching on tensor values.
+        All requests are processed in a single batched SDPA call with a
+        float mask derived from lengths_after. This path is CUDA-graph-
+        compatible because no .tolist() or .item() is called.
+
+    Prefill (is_decode=False):
+        Per-request Python loop with .tolist() to handle variable q_lens
+        and causal masking. Shapes vary per request, so this path is NOT
+        CUDA-graph-compatible. Prefill is never captured in graphs.
     """
     K_pool, V_pool = paged_ctx.kv_caches[layer_idx]
     num_pages, page_size, num_kv_heads, head_dim = K_pool.shape
 
-    # Flat views into the per-layer slab so we can scatter by slot index.
+    # Flat views into the per-layer slab for slot-indexed scatter-write.
     K_flat = K_pool.view(num_pages * page_size, num_kv_heads, head_dim)
     V_flat = V_pool.view(num_pages * page_size, num_kv_heads, head_dim)
 
-    # k_new/v_new are (1, kv_heads, total_q, head_dim) — flatten over the
-    # token axis to (total_q, kv_heads, head_dim) for scatter.
     total_q = k_new.shape[2]
-    k_pack = k_new.squeeze(0).transpose(0, 1).contiguous()  # (total_q, kv_heads, head_dim)
+    # (total_q, kv_heads, head_dim) for index_copy_
+    k_pack = k_new.squeeze(0).transpose(0, 1).contiguous()
     v_pack = v_new.squeeze(0).transpose(0, 1).contiguous()
-
     K_flat.index_copy_(0, paged_ctx.slot_mapping, k_pack)
     V_flat.index_copy_(0, paged_ctx.slot_mapping, v_pack)
 
-    # ── Per-request attention via gather of full KV history ────────────
     batch = paged_ctx.page_indices.shape[0]
-    # cu_seqlens_q tells us where each request's queries live in `q`.
-    # For decode, every request has exactly 1 new token, so
-    # cu_seqlens_q = [0, 1, 2, …, batch].
-    if paged_ctx.cu_seqlens_q is not None:
-        cu_q = paged_ctx.cu_seqlens_q
-    else:
-        cu_q = torch.arange(batch + 1, device=q.device, dtype=torch.int32)
-
     num_heads = q.shape[1]
-    out_pack = torch.empty(
-        total_q, num_heads, head_dim, device=q.device, dtype=q.dtype
-    )
     # q_pack: (total_q, num_heads, head_dim)
     q_pack = q.squeeze(0).transpose(0, 1).contiguous()
 
-    lengths_after = paged_ctx.lengths_after.tolist()
-    cu_q_list = cu_q.tolist()
-    page_indices = paged_ctx.page_indices  # (batch, max_pages)
+    if paged_ctx.is_decode:
+        # ── Fully batched, fixed-shape decode path ──────────────────────
+        # For decode total_q == batch (one new token per request).
+        # All tensor shapes are fixed at capture time → CUDA-graph-safe.
+        page_indices = paged_ctx.page_indices   # (batch, max_pages) int32
+        lengths_after = paged_ctx.lengths_after  # (batch,) int32
+        max_num_pages = page_indices.shape[1]
+        max_kv_len = max_num_pages * page_size
 
-    for i in range(batch):
-        q_start = cu_q_list[i]
-        q_end = cu_q_list[i + 1]
-        q_len = q_end - q_start
-        if q_len == 0:
-            continue
-
-        kv_len = lengths_after[i]
-        if kv_len == 0:
-            # nothing to attend over (shouldn't happen because q itself
-            # contributes ≥1 to length_after, but be defensive).
-            out_pack[q_start:q_end] = 0
-            continue
-
-        # Gather this request's pages: (num_pages_i, page_size, kv_heads, head_dim)
-        n_pages = (kv_len + page_size - 1) // page_size
-        idx = page_indices[i, :n_pages]
-        gathered_k = K_pool.index_select(0, idx)  # (n, page, kv, hd)
-        gathered_v = V_pool.index_select(0, idx)
-        # Flatten pages → tokens, then trim to actual length.
-        k_seq = gathered_k.reshape(n_pages * page_size, num_kv_heads, head_dim)[:kv_len]
-        v_seq = gathered_v.reshape(n_pages * page_size, num_kv_heads, head_dim)[:kv_len]
-
-        # Reshape for SDPA: (1, num_heads, seq, head_dim).
-        k_seq = k_seq.transpose(0, 1).unsqueeze(0)  # (1, kv_heads, kv_len, hd)
-        v_seq = v_seq.transpose(0, 1).unsqueeze(0)
+        # Gather every page of every request in one index op.
+        # Padding entries in page_indices (zeros) fetch page 0 of the pool;
+        # those positions are masked to -inf in attn_mask below.
+        flat_idx = page_indices.view(-1).long()          # (batch * max_pages,)
+        k_all = K_pool[flat_idx].reshape(batch, max_kv_len, num_kv_heads, head_dim)
+        v_all = V_pool[flat_idx].reshape(batch, max_kv_len, num_kv_heads, head_dim)
+        # → (batch, kv_heads, max_kv_len, head_dim)
+        k_all = k_all.transpose(1, 2)
+        v_all = v_all.transpose(1, 2)
 
         if num_kv_groups > 1:
-            k_seq = (
-                k_seq[:, :, None, :, :]
+            k_all = (
+                k_all[:, :, None, :, :]
                 .expand(-1, -1, num_kv_groups, -1, -1)
-                .reshape(1, num_kv_heads * num_kv_groups, kv_len, head_dim)
+                .reshape(batch, num_heads, max_kv_len, head_dim)
             )
-            v_seq = (
-                v_seq[:, :, None, :, :]
+            v_all = (
+                v_all[:, :, None, :, :]
                 .expand(-1, -1, num_kv_groups, -1, -1)
-                .reshape(1, num_kv_heads * num_kv_groups, kv_len, head_dim)
+                .reshape(batch, num_heads, max_kv_len, head_dim)
             )
 
-        # q for this request: (q_len, num_heads, hd) → (1, num_heads, q_len, hd)
-        q_i = q_pack[q_start:q_end].transpose(0, 1).unsqueeze(0)
+        # Float attention mask: 0 for valid KV positions, -inf for padding.
+        # Computed entirely with tensor ops — no .tolist() / .item().
+        # positions: (1, max_kv_len);  lengths_after: (batch, 1) after unsqueeze
+        positions = torch.arange(max_kv_len, device=q.device).unsqueeze(0)
+        invalid = positions >= lengths_after.to(torch.int64).unsqueeze(1)  # (batch, max_kv_len)
+        attn_mask = torch.zeros(
+            batch, 1, 1, max_kv_len, device=q.device, dtype=q.dtype
+        ).masked_fill(invalid.unsqueeze(1).unsqueeze(2), float("-inf"))
 
-        if q_len == 1:
-            # Single-token decode — no causal mask needed.
-            out_i = F.scaled_dot_product_attention(q_i, k_seq, v_seq, is_causal=False)
+        # q_pack: (batch, num_heads, head_dim) → (batch, num_heads, 1, head_dim)
+        q_batch = q_pack.unsqueeze(2)
+        out_i = F.scaled_dot_product_attention(q_batch, k_all, v_all, attn_mask=attn_mask)
+        # (batch, num_heads, 1, head_dim) → (batch, num_heads, head_dim)
+        out_pack = out_i.squeeze(2)
+    else:
+        # ── Per-request loop path (prefill only) ────────────────────────
+        if paged_ctx.cu_seqlens_q is not None:
+            cu_q = paged_ctx.cu_seqlens_q
         else:
-            # Prefill (or chunked prefill) — last `q_len` queries attend
-            # to the *last* `kv_len` keys causally. Build a (q_len, kv_len)
-            # mask: row r corresponds to absolute position
-            # (kv_len - q_len + r); it can attend to positions ≤ that.
-            offset = kv_len - q_len
-            row = torch.arange(q_len, device=q.device).unsqueeze(1) + offset
-            col = torch.arange(kv_len, device=q.device).unsqueeze(0)
-            mask = torch.where(
-                col <= row,
-                torch.zeros((), dtype=q.dtype, device=q.device),
-                torch.full((), float("-inf"), dtype=q.dtype, device=q.device),
-            )
-            out_i = F.scaled_dot_product_attention(
-                q_i, k_seq, v_seq, attn_mask=mask
-            )
+            cu_q = torch.arange(batch + 1, device=q.device, dtype=torch.int32)
 
-        # (1, num_heads, q_len, hd) → (q_len, num_heads, hd)
-        out_pack[q_start:q_end] = out_i.squeeze(0).transpose(0, 1)
+        lengths_after_list = paged_ctx.lengths_after.tolist()
+        cu_q_list = cu_q.tolist()
+        page_indices = paged_ctx.page_indices  # (batch, max_pages)
 
-    # Reshape back to (1, num_heads, total_q, head_dim).
+        out_pack = torch.zeros(total_q, num_heads, head_dim, device=q.device, dtype=q.dtype)
+
+        for i in range(batch):
+            q_start = cu_q_list[i]
+            q_end = cu_q_list[i + 1]
+            q_len = q_end - q_start
+            if q_len == 0:
+                continue
+
+            kv_len = lengths_after_list[i]
+            if kv_len == 0:
+                continue
+
+            n_pages = (kv_len + page_size - 1) // page_size
+            idx = page_indices[i, :n_pages].long()
+            gathered_k = K_pool.index_select(0, idx)
+            gathered_v = V_pool.index_select(0, idx)
+            k_seq = gathered_k.reshape(n_pages * page_size, num_kv_heads, head_dim)[:kv_len]
+            v_seq = gathered_v.reshape(n_pages * page_size, num_kv_heads, head_dim)[:kv_len]
+
+            # (1, kv_heads, kv_len, head_dim)
+            k_seq = k_seq.transpose(0, 1).unsqueeze(0)
+            v_seq = v_seq.transpose(0, 1).unsqueeze(0)
+
+            if num_kv_groups > 1:
+                k_seq = (
+                    k_seq[:, :, None, :, :]
+                    .expand(-1, -1, num_kv_groups, -1, -1)
+                    .reshape(1, num_kv_heads * num_kv_groups, kv_len, head_dim)
+                )
+                v_seq = (
+                    v_seq[:, :, None, :, :]
+                    .expand(-1, -1, num_kv_groups, -1, -1)
+                    .reshape(1, num_kv_heads * num_kv_groups, kv_len, head_dim)
+                )
+
+            # (1, num_heads, q_len, head_dim)
+            q_i = q_pack[q_start:q_end].transpose(0, 1).unsqueeze(0)
+
+            if q_len == 1:
+                out_i = F.scaled_dot_product_attention(q_i, k_seq, v_seq, is_causal=False)
+            else:
+                # Causal mask: row r (absolute pos kv_len-q_len+r) attends to col c ≤ row.
+                offset = kv_len - q_len
+                row = torch.arange(q_len, device=q.device).unsqueeze(1) + offset
+                col = torch.arange(kv_len, device=q.device).unsqueeze(0)
+                mask = torch.where(
+                    col <= row,
+                    torch.zeros((), dtype=q.dtype, device=q.device),
+                    torch.full((), float("-inf"), dtype=q.dtype, device=q.device),
+                )
+                out_i = F.scaled_dot_product_attention(q_i, k_seq, v_seq, attn_mask=mask)
+
+            # (1, num_heads, q_len, hd) → (q_len, num_heads, hd)
+            out_pack[q_start:q_end] = out_i.squeeze(0).transpose(0, 1)
+
+    # (total_q, num_heads, head_dim) → (1, num_heads, total_q, head_dim)
     return out_pack.transpose(0, 1).unsqueeze(0).contiguous()
 
 

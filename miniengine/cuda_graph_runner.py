@@ -83,6 +83,23 @@ class CudaGraphRunner:
         for _ in range(3):
             self._dummy_forward(self.bucket_batch_sizes[0])
 
+        # Pre-warm the RoPE cache to cover the maximum decode position the
+        # graph will ever encounter.  The dummy forwards above only use
+        # position_ids=0, leaving _cached_len=256.  During graph replay,
+        # position_ids equals the current KV length, which can be as large
+        # as max_pages * page_size.  If that exceeds _cached_len the
+        # recorded index-gather on self._cos would be out-of-bounds.
+        pool = engine.kv_pool
+        page_size = pool.page_size if pool is not None else 32
+        max_decode_pos = self.max_pages * page_size
+        warm_pos = torch.arange(max_decode_pos, device=device).unsqueeze(0)
+        with torch.inference_mode():
+            engine.model.model.rotary_emb(warm_pos)
+        logger.info(
+            "RoPE cache pre-warmed to %d positions (max_pages=%d, page_size=%d)",
+            max_decode_pos, self.max_pages, page_size,
+        )
+
         for bs in self.bucket_batch_sizes:
             self._graphs[bs] = self._capture_one(bs)
             logger.info("Captured CUDA graph for batch_size=%d", bs)

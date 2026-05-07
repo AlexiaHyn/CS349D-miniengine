@@ -195,13 +195,21 @@ class Scheduler:
         # ── Phase 1: admit (gated by pool capacity) ─────────────────────
         with self._lock:
             to_prefill: list[Request] = []
+            pool = self.engine.kv_pool
+            pages_reserved = 0  # cumulative pages committed to co-admitted requests
             while (
                 self.waiting and len(self.running) + len(to_prefill) < self.max_running
             ):
-                # Peek; only admit if the engine says the pool can fit it.
                 head = self.waiting[0]
-                if not self.engine.can_admit(head):
-                    break
+                # Check cumulative page budget — can_admit only tests the
+                # single-request need against current free pages; here we
+                # also subtract pages already reserved for other candidates
+                # admitted in this same iteration.
+                if pool is not None:
+                    need = pool.pages_needed(head.num_input_tokens + 1)
+                    if pool.num_free < pages_reserved + need:
+                        break
+                    pages_reserved += need
                 to_prefill.append(self.waiting.popleft())
 
         if to_prefill:
@@ -224,6 +232,7 @@ class Scheduler:
             while self.running and pool.num_free < len(self.running):
                 victim = self.running.pop()
                 self.engine.free_request_pages(victim)
+                victim.output_ids.clear()
                 victim.status = RequestStatus.WAITING
                 with self._lock:
                     self.waiting.appendleft(victim)
