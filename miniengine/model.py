@@ -149,15 +149,23 @@ class RotaryEmbedding(nn.Module):
         Returns:
             cos, sin each of shape (batch, 1, seq_len, head_dim) —
             broadcastable over the head dimension.
+
+        Note: callers must ensure the cache is pre-extended (via
+        `extend_to`) to cover the maximum position they'll query. The
+        only fall-back here is the very first call (cold cache); after
+        that, this method is sync-free, which lets it be captured by
+        CUDA graphs and torch.compile.
         """
-        if self._cos is None or (
-            int(position_ids.max().item()) + 1 > self._cached_len
-        ):
+        if self._cos is None:
+            # Cold path — first call ever. Triggers a CPU sync, but
+            # only happens once at startup (engine warm-up calls
+            # extend_to() before any benchmark work).
             self.extend_to(
-                max(int(position_ids.max().item()) + 1, self._cached_len * 2, 256)
+                max(int(position_ids.max().item()) + 1, 256)
             )
 
-        # Index into cache: (batch, seq_len, head_dim) → add head dim
+        # Hot path — assume cache is large enough (engine pre-extends
+        # at startup). NO .item() call here so CUDA graph capture works.
         cos = self._cos[position_ids].unsqueeze(2)  # (batch, seq_len, 1, head_dim)
         sin = self._sin[position_ids].unsqueeze(2)
         return cos, sin
