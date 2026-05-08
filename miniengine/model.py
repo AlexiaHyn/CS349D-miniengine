@@ -607,6 +607,17 @@ class CausalLM(nn.Module):
         if not config.tie_word_embeddings:
             self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
+    def project_logits(self, hidden: torch.Tensor) -> torch.Tensor:
+        """Final hidden -> vocab logits projection.
+
+        Pulled out so the engine can wrap it in torch.compile separately
+        (vocab=152k matmul is a hot kernel; compiling it lets Inductor
+        epilogue-fuse with downstream sampling preprocessing if any).
+        """
+        if self.config.tie_word_embeddings:
+            return F.linear(hidden, self.model.embed_tokens.weight)
+        return self.lm_head(hidden)
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -623,10 +634,7 @@ class CausalLM(nn.Module):
         hidden, new_kv_caches = self.model(
             input_ids, position_ids, kv_caches, attention_mask, paged_meta
         )
-        if self.config.tie_word_embeddings:
-            logits = F.linear(hidden, self.model.embed_tokens.weight)
-        else:
-            logits = self.lm_head(hidden)
+        logits = self.project_logits(hidden)
         return logits, new_kv_caches
 
 
