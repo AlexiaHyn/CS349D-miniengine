@@ -14,13 +14,15 @@ Three decode paths:
                                 KV + attention mask, single forward.
   - paged_decode(reqs)       : milestone-2 paged mode — KV lives in a
                                 global pool; attention reads/writes via
-                                per-request page tables.
+                                per-request page tables, dispatched to
+                                flash_attn_with_kvcache.
 
 Prefill paths:
   - prefill(req)               : single-request, contiguous-cache.
   - paged_prefill_packed(reqs) : packed batched prefill for paged mode —
                                  N prompts flattened into one packed
-                                 sequence, single forward pass.
+                                 sequence, single flash_attn_varlen_func
+                                 forward pass.
 """
 
 from __future__ import annotations
@@ -33,15 +35,22 @@ import torch.nn.functional as F
 from transformers import AutoTokenizer
 
 from miniengine.core import Request
-from miniengine.kv_memory_pool import KVMemoryPool, PagedKVMeta
-from miniengine.model import CausalLM, ModelConfig, PagedAttnCtx, load_weights
+from miniengine.kv_memory_pool import KVMemoryPool
+from miniengine.model import (
+    CausalLM,
+    ModelConfig,
+    PagedMeta,
+    RotaryEmbedding,
+    TransformerBlock,
+    load_weights,
+)
 from miniengine.sampler import sample_token
 
 logger = logging.getLogger(__name__)
 
 
 class Engine:
-    """Model wrapper supporting baseline (per-request) and batched decode."""
+    """Model wrapper supporting baseline / batched / paged decode."""
 
     def __init__(
         self,
@@ -49,7 +58,7 @@ class Engine:
         dtype: torch.dtype = torch.bfloat16,
         device: str = "cuda",
         mode: str = "batched",
-        page_size: int = 32,
+        page_size: int = 256,
         mem_fraction_static: float = 0.85,
         torch_compile: bool = False,
         cuda_graph: bool = False,
@@ -94,41 +103,38 @@ class Engine:
         load_weights(self.model, model_path, dtype=dtype, device=device)
         self.model.eval()
 
-        # ── Optional torch.compile on each transformer block ────────────
-        # We compile per-block (stable shapes within a block) rather than
-        # the whole model — full-model compile triggers recompiles on
-        # variable seq_len / kv_len.
-        if torch_compile:
-            self._apply_torch_compile()
+        # ── Stop tokens ─────────────────────────────────────────────────
+        self.stop_token_ids = self._collect_stop_token_ids()
 
-        # ── Paged KV pool (constructed lazily for non-paged modes) ─────
+        # ── Paged KV pool (constructed only for --mode paged) ──────────
         self.kv_pool: KVMemoryPool | None = None
         if mode == "paged":
-            self.kv_pool = self._build_kv_pool()
+            # flash-attn 2.x's paged-kv kernel hard-requires
+            # block_size % 256 == 0; surface the constraint up front.
+            if self.page_size % 256 != 0:
+                raise ValueError(
+                    f"--page-size must be a multiple of 256 in paged mode "
+                    f"(flash-attn paged-kv kernel constraint), got {self.page_size}."
+                )
+            self._build_kv_pool(config)
 
-        # ── Warm up RoPE cache ──────────────────────────────────────────
-        # Pre-populate cos/sin tables so the serving hot-path never calls
-        # position_ids.max().item() (a CPU↔GPU sync on every decode step).
-        _rope_warmup_len = (
-            min(
-                self.kv_pool.num_pages * self.kv_pool.page_size,
-                config.max_position_embeddings,
-            )
-            if self.kv_pool is not None
-            else min(config.max_position_embeddings, 8192)
-        )
-        self.model.model.rotary_emb.warmup(_rope_warmup_len)
-        logger.info("RoPE cache pre-warmed to %d positions", _rope_warmup_len)
+        # ── Optional torch.compile (Part C) ─────────────────────────────
+        # Done AFTER the pool is built so the RoPE warm-up below sees the
+        # final cache footprint.
+        if torch_compile:
+            self._apply_torch_compile(config)
 
-        # ── Optional CUDA-graph runner for paged decode ─────────────────
+        # ── Optional CUDA-graph runner for paged decode (extra credit) ─
         self.cuda_graph_runner = None
         if cuda_graph:
             if mode != "paged":
                 raise ValueError("--cuda-graph requires --mode paged")
             from miniengine.cuda_graph_runner import CudaGraphRunner
+
             self.cuda_graph_runner = CudaGraphRunner(
                 engine=self,
-                bucket_batch_sizes=self.cuda_graph_batch_sizes or [1, 2, 4, 8, 16, 32],
+                bucket_batch_sizes=self.cuda_graph_batch_sizes
+                or [1, 2, 4, 8, 16, 32],
             )
             try:
                 self.cuda_graph_runner.capture()
@@ -138,24 +144,103 @@ class Engine:
                 )
                 self.cuda_graph_runner = None
 
-        # ── Stop tokens ─────────────────────────────────────────────────
-        self.stop_token_ids: set[int] = set()
-        if self.tokenizer.eos_token_id is not None:
-            self.stop_token_ids.add(self.tokenizer.eos_token_id)
-        for tok_name in ("eos_token", "pad_token"):
-            tid = getattr(self.tokenizer, f"{tok_name}_id", None)
-            if tid is not None:
-                self.stop_token_ids.add(tid)
-        for token_str in ("<|im_end|>", "<|endoftext|>", "<|end|>"):
-            tid = self.tokenizer.convert_tokens_to_ids(token_str)
-            if tid is not None and tid != self.tokenizer.unk_token_id:
-                self.stop_token_ids.add(tid)
-
         logger.info(
             "Engine ready  —  vocab=%d, stop_ids=%s, params=%dM",
             len(self.tokenizer),
             self.stop_token_ids,
             sum(p.numel() for p in self.model.parameters()) // 1_000_000,
+        )
+
+    # ── Setup helpers ───────────────────────────────────────────────────
+
+    def _collect_stop_token_ids(self) -> set[int]:
+        ids: set[int] = set()
+        for attr in ("eos_token_id", "pad_token_id"):
+            tid = getattr(self.tokenizer, attr, None)
+            if tid is not None:
+                ids.add(tid)
+        for token_str in ("<|im_end|>", "<|endoftext|>", "<|end|>"):
+            tid = self.tokenizer.convert_tokens_to_ids(token_str)
+            if tid is not None and tid != self.tokenizer.unk_token_id:
+                ids.add(tid)
+        return ids
+
+    def _build_kv_pool(self, config: ModelConfig) -> None:
+        """Allocate the KV pool from
+        (mem_fraction_static * total_vram) - weights_bytes."""
+        if not torch.cuda.is_available() or self.device == "cpu":
+            raise RuntimeError("paged mode currently requires a CUDA device")
+
+        total_vram = torch.cuda.get_device_properties(
+            torch.cuda.current_device()
+        ).total_memory
+        weights_bytes = sum(
+            p.numel() * p.element_size() for p in self.model.parameters()
+        )
+        bytes_budget = int(self.mem_fraction_static * total_vram) - weights_bytes
+        if bytes_budget <= 0:
+            raise RuntimeError(
+                f"mem_fraction_static={self.mem_fraction_static} leaves no room "
+                f"for the KV pool (weights={weights_bytes / 1e9:.2f} GB, "
+                f"budget={self.mem_fraction_static * total_vram / 1e9:.2f} GB)"
+            )
+
+        self.kv_pool = KVMemoryPool.from_budget(
+            num_layers=config.num_hidden_layers,
+            num_kv_heads=config.num_key_value_heads,
+            head_dim=config.head_dim,
+            page_size=self.page_size,
+            dtype=self.dtype,
+            device=self.device,
+            bytes_budget=bytes_budget,
+        )
+        logger.info(
+            "KV pool ready  —  %s  (budget=%.2f GB, weights=%.2f GB, total=%.2f GB)",
+            self.kv_pool,
+            bytes_budget / 1e9,
+            weights_bytes / 1e9,
+            total_vram / 1e9,
+        )
+
+    def _apply_torch_compile(self, config: ModelConfig) -> None:
+        """Compile five sub-regions per block ("narrow island" style).
+
+        We compile at boundaries that already break dynamo's graph
+        anyway (the flash-attn call), so each compiled region stays a
+        clean Inductor graph and shape changes in attention don't force
+        the rest of the block to retrace.
+
+        Pre-extends the RoPE cos/sin cache before compiling so the
+        `.item()`-bearing lazy-grow branch never fires under the compiled
+        path (it would graph-break).
+        """
+        # Prime the RoPE cache so its lazy-grow `.item()` branch never
+        # fires inside compiled forwards (graph break + sync).
+        max_pos = min(config.max_position_embeddings, 16384)
+        for module in self.model.modules():
+            if isinstance(module, RotaryEmbedding):
+                module.extend_to(max_pos)
+        logger.info("Pre-extended RoPE cos/sin cache to length %d", max_pos)
+
+        opts = dict(mode="default", dynamic=True)
+        n = 0
+        for block in self.model.modules():
+            if not isinstance(block, TransformerBlock):
+                continue
+            # First block uses bare input_layernorm (residual=None branch);
+            # blocks 1+ go through _add_norm_pre. Compile both.
+            block.input_layernorm = torch.compile(block.input_layernorm, **opts)
+            block._add_norm_pre = torch.compile(block._add_norm_pre, **opts)
+            block._add_norm_post = torch.compile(block._add_norm_post, **opts)
+            block.mlp = torch.compile(block.mlp, **opts)
+            block.self_attn._proj_qkv_with_rope = torch.compile(
+                block.self_attn._proj_qkv_with_rope, **opts
+            )
+            n += 1
+        logger.info(
+            "torch.compile: wrapped %d blocks "
+            "(input_norm + qkv_with_rope + add_norm_pre + add_norm_post + mlp)",
+            n,
         )
 
     # ── Tokenization ────────────────────────────────────────────────────
@@ -179,20 +264,12 @@ class Engine:
         """Decode a single token id back to a string."""
         return self.tokenizer.decode([token_id], skip_special_tokens=True)
 
-    # ── Forward passes ──────────────────────────────────────────────────
+    # ── Forward passes (baseline mode) ──────────────────────────────────
 
     @torch.inference_mode()
     def prefill(self, request: Request) -> int:
-        """
-        Run the prefill phase for one request.
-
-        Processes the full prompt in a single forward pass, stores the
-        resulting KV cache on the request, and samples the first output
-        token.
-
-        Returns:
-            The first generated token id.
-        """
+        """One-request prefill (baseline mode). Stores KV on the request,
+        returns the first sampled token."""
         input_ids = torch.tensor(
             [request.input_ids], dtype=torch.long, device=self.device
         )
@@ -201,35 +278,23 @@ class Engine:
 
         logits, kv_caches = self.model(input_ids, position_ids, kv_caches=None)
         request.kv_cache = kv_caches
-
-        # Sample from the last position
         return sample_token(
             logits[:, -1, :], request.sampling_params, request.output_ids
         )
 
     @torch.inference_mode()
     def decode_step(self, request: Request) -> int:
-        """
-        Run one decode step for a request that has already been prefilled.
-
-        Feeds the last generated token through the model together with the
-        cached KV values, updates the cache, and samples the next token.
-
-        Returns:
-            The next generated token id.
-        """
+        """One-request decode step (baseline mode)."""
         input_ids = torch.tensor(
             [[request.output_ids[-1]]], dtype=torch.long, device=self.device
         )
-        # Position = current KV cache length (= num tokens already processed)
-        cache_len = request.kv_cache[0][0].shape[2]  # layer 0, key tensor, seq dim
+        cache_len = request.kv_cache[0][0].shape[2]
         position_ids = torch.tensor([[cache_len]], device=self.device)
 
         logits, kv_caches = self.model(
             input_ids, position_ids, kv_caches=request.kv_cache
         )
         request.kv_cache = kv_caches
-
         return sample_token(
             logits[:, -1, :], request.sampling_params, request.output_ids
         )
@@ -237,7 +302,7 @@ class Engine:
     def is_stop_token(self, token_id: int) -> bool:
         return token_id in self.stop_token_ids
 
-    # ── Batched decode ──────────────────────────────────────────────────
+    # ── Batched decode (milestone-1 mode) ───────────────────────────────
 
     @torch.inference_mode()
     def batched_decode(self, requests: list[Request]) -> list[int]:
@@ -327,304 +392,164 @@ class Engine:
             )
         return token_ids
 
-    # ── Paged-mode setup ────────────────────────────────────────────────
-
-    @staticmethod
-    def _bucket_max_pages(n: int) -> int:
-        """Round n up to the next power of 2.
-
-        Keeping page-table width at a power-of-2 boundary means the
-        compiled attention kernel only recompiles at doublings (1→2→4→…)
-        rather than on every page boundary crossing.
-        """
-        p = 1
-        while p < n:
-            p <<= 1
-        return p
-
-    def _apply_torch_compile(self) -> None:
-        """Compile each TransformerBlock.
-
-        Block-level compile keeps shapes stable within a block (only
-        Python-level branching is the paged-vs-eager flag), so dynamo
-        doesn't need to re-trace per step. Wrapping the whole model
-        commonly hits dynamic-shape recompiles on the seq dim.
-
-        mode="reduce-overhead" targets exactly the small-op launch overhead
-        that dominates decode steps. dynamic=True avoids compilation storms
-        from the variable batch sizes seen across decode steps.
-        """
-        logger.info("Applying torch.compile to each TransformerBlock …")
-        for i, block in enumerate(self.model.model.layers):
-            self.model.model.layers[i] = torch.compile(
-                block, mode="reduce-overhead", dynamic=True, fullgraph=False
-            )
-
-    def _build_kv_pool(self) -> KVMemoryPool:
-        """Allocate the paged KV pool sized to mem_fraction_static.
-
-        Budget: total GPU memory * fraction - bytes already used by the
-        loaded weights. The remaining budget pays for the pool.
-        """
-        if self.device == "cuda" and torch.cuda.is_available():
-            total = torch.cuda.get_device_properties(0).total_memory
-            allocated = torch.cuda.memory_allocated()
-            kv_budget = int(total * self.mem_fraction_static) - allocated
-        else:
-            # No CUDA — use a small default so the pool can still be
-            # constructed for unit tests / CPU-only smoke tests.
-            kv_budget = 1 << 30  # 1 GiB
-
-        if kv_budget <= 0:
-            raise RuntimeError(
-                f"No memory left for KV pool (budget={kv_budget} B). "
-                "Reduce model size or raise --mem-fraction-static."
-            )
-
-        cfg = self.config
-        pool = KVMemoryPool.from_budget(
-            num_layers=cfg.num_hidden_layers,
-            num_kv_heads=cfg.num_key_value_heads,
-            head_dim=cfg.head_dim,
-            page_size=self.page_size,
-            dtype=self.dtype,
-            device=self.device,
-            bytes_budget=kv_budget,
-        )
-        logger.info(
-            "KV pool: %d pages × %d tokens × %d kv_heads × %d head_dim "
-            "(%d layers, ~%.2f GiB)",
-            pool.num_pages,
-            pool.page_size,
-            cfg.num_key_value_heads,
-            cfg.head_dim,
-            cfg.num_hidden_layers,
-            pool.num_pages
-            * pool.page_size
-            * cfg.num_key_value_heads
-            * cfg.head_dim
-            * cfg.num_hidden_layers
-            * 2
-            * torch.tensor([], dtype=self.dtype).element_size()
-            / (1 << 30),
-        )
-        return pool
-
-    # ── Paged: prefill + decode ─────────────────────────────────────────
+    # ── Paged: prefill + decode (milestone-2 mode) ──────────────────────
 
     def can_admit(self, request: Request) -> bool:
-        """Return True if the pool has enough free pages for this prompt."""
+        """Return True if the pool has enough free pages for this prompt
+        plus one headroom page for the first decode step."""
         assert self.kv_pool is not None
-        # +1 to leave room for the first generated token.
-        need = self.kv_pool.pages_needed(request.num_input_tokens + 1)
+        need = self.kv_pool.pages_needed(request.num_input_tokens) + 1
         return self.kv_pool.num_free >= need
 
-    def _allocate_pages_for(self, request: Request, total_tokens: int) -> None:
-        """Ensure request's page table covers `total_tokens`, allocating new pages."""
-        assert self.kv_pool is not None
-        meta: PagedKVMeta = request.kv_cache  # type: ignore[assignment]
-        have_pages = len(meta.page_indices)
-        need_pages = self.kv_pool.pages_needed(total_tokens)
-        if need_pages > have_pages:
-            extra = self.kv_pool.allocate(need_pages - have_pages)
-            meta.page_indices.extend(extra)
-
     def free_request_pages(self, request: Request) -> None:
-        """Return all pages held by `request` to the pool."""
-        if self.kv_pool is None or request.kv_cache is None:
+        """Return a request's pages to the pool (paged mode)."""
+        if self.kv_pool is None:
             return
-        meta = request.kv_cache
-        if isinstance(meta, PagedKVMeta) and meta.page_indices:
-            self.kv_pool.free(meta.page_indices)
-            meta.page_indices = []
-            meta.length = 0
+        if request.page_indices:
+            self.kv_pool.free(request.page_indices)
+            request.page_indices = []
+            request.seq_len = 0
 
     @torch.inference_mode()
     def paged_prefill_packed(self, requests: list[Request]) -> list[int]:
         """Packed batched prefill for paged mode.
 
         Flattens all prompts into one packed sequence and runs a single
-        forward pass through the paged-attention path. Each request gets
-        its first sampled token written to output_ids.
+        flash_attn_varlen_func forward pass through the paged-attention
+        path. Each request's `seq_len` is set on success and the first
+        sampled token is returned.
+
+        Pre-condition: scheduler has already allocated `request.page_indices`
+        sized to fit the prompt. This method does NOT touch the free list.
         """
         assert self.kv_pool is not None
         if not requests:
             return []
-
-        # Allocate page tables and assign slot mappings for each prompt.
-        cu_seqlens_q = [0]
-        slot_mapping_list: list[int] = []
-        position_ids_list: list[int] = []
-        input_ids_list: list[int] = []
-        lengths_after = []
-        page_indices_list: list[list[int]] = []
-
-        for req in requests:
-            prompt = req.input_ids
-            L = len(prompt)
-            req.kv_cache = PagedKVMeta(page_indices=[], length=0)
-            self._allocate_pages_for(req, L)
-            meta: PagedKVMeta = req.kv_cache
-            meta.length = L
-            page_indices_list.append(list(meta.page_indices))
-
-            # Slots for the L new tokens of this prompt.
-            page_size = self.kv_pool.page_size
-            for tok_idx in range(L):
-                page_local = tok_idx // page_size
-                offset = tok_idx % page_size
-                slot = meta.page_indices[page_local] * page_size + offset
-                slot_mapping_list.append(slot)
-                position_ids_list.append(tok_idx)
-
-            input_ids_list.extend(prompt)
-            cu_seqlens_q.append(cu_seqlens_q[-1] + L)
-            lengths_after.append(L)
-
-        # Build packed tensors. The packed sequence sits on dim 1 of
-        # batch=1 input — the model treats it as one long sequence; the
-        # paged-attn ctx slices it back per request.
         device = self.device
-        input_ids = torch.tensor([input_ids_list], dtype=torch.long, device=device)
+        page_size = self.kv_pool.page_size
+
+        seq_lens = [r.num_input_tokens for r in requests]
+        cu = [0]
+        for sl in seq_lens:
+            cu.append(cu[-1] + sl)
+
+        flat_ids: list[int] = []
+        flat_pos: list[int] = []
+        flat_slot: list[int] = []
+        for r in requests:
+            flat_ids.extend(r.input_ids)
+            flat_pos.extend(range(r.num_input_tokens))
+            for tok_idx in range(r.num_input_tokens):
+                page_id = r.page_indices[tok_idx // page_size]
+                flat_slot.append(page_id * page_size + (tok_idx % page_size))
+
+        input_ids = torch.tensor(flat_ids, dtype=torch.long, device=device).unsqueeze(0)
         position_ids = torch.tensor(
-            [position_ids_list], dtype=torch.long, device=device
-        )
-        slot_mapping = torch.tensor(slot_mapping_list, dtype=torch.long, device=device)
-        cu_q_t = torch.tensor(cu_seqlens_q, dtype=torch.int32, device=device)
-        lengths_after_t = torch.tensor(
-            lengths_after, dtype=torch.int32, device=device
+            flat_pos, dtype=torch.long, device=device
+        ).unsqueeze(0)
+        meta = PagedMeta(
+            phase="prefill",
+            page_size=page_size,
+            cu_seqlens_q=torch.tensor(cu, dtype=torch.int32, device=device),
+            cu_seqlens_k=torch.tensor(cu, dtype=torch.int32, device=device),
+            max_seqlen_q=max(seq_lens),
+            max_seqlen_k=max(seq_lens),
+            slot_mapping=torch.tensor(flat_slot, dtype=torch.long, device=device),
         )
 
-        # Pad page tables to a common max length so we can stack.
-        max_pages = max(len(pt) for pt in page_indices_list)
-        page_table = torch.zeros(
-            len(requests), max_pages, dtype=torch.int32, device=device
-        )
-        for i, pt in enumerate(page_indices_list):
-            page_table[i, : len(pt)] = torch.tensor(pt, dtype=torch.int32)
-
-        ctx = PagedAttnCtx(
+        # Run only the transformer body; we'll project just the last hidden
+        # state of each request through lm_head — running it over the full
+        # packed sequence wastes a (sum_q, vocab) matmul we'd discard.
+        hidden, _ = self.model.model(
+            input_ids,
+            position_ids,
             kv_caches=self.kv_pool.kv_caches,
-            page_size=self.kv_pool.page_size,
-            page_indices=page_table,
-            lengths_after=lengths_after_t,
-            slot_mapping=slot_mapping,
-            cu_seqlens_q=cu_q_t,
-            is_decode=False,
+            paged_meta=meta,
         )
-
-        torch.compiler.cudagraph_mark_step_begin()
-        # Run only the transformer body to get hidden states; avoid computing
-        # lm_head over all total_tokens (= total_prompts × prompt_len) which
-        # OOMs at high concurrency (shape: total_tokens × vocab_size).
-        hidden, _ = self.model.model(input_ids, position_ids, paged_ctx=ctx)
-        # hidden: (1, total_q, hidden_size). Extract only the last-token
-        # hidden state of each request, then run lm_head on just batch tokens.
         last_indices = torch.tensor(
-            [cu_seqlens_q[i + 1] - 1 for i in range(len(requests))],
+            [cu[i + 1] - 1 for i in range(len(requests))],
             dtype=torch.long,
             device=device,
         )
-        hidden_last = hidden[0, last_indices]  # (batch, hidden_size)
+        last_hidden = hidden[:, last_indices, :]
         if self.model.config.tie_word_embeddings:
-            logits_batch = F.linear(hidden_last, self.model.model.embed_tokens.weight)
+            logits = F.linear(last_hidden, self.model.model.embed_tokens.weight)
         else:
-            logits_batch = self.model.lm_head(hidden_last)
-        # logits_batch: (batch, vocab_size)
+            logits = self.model.lm_head(last_hidden)
+        # logits: (1, batch, vocab)
+
         token_ids: list[int] = []
-        for i, req in enumerate(requests):
-            tok = sample_token(
-                logits_batch[i : i + 1], req.sampling_params, req.output_ids
-            )
+        for i, r in enumerate(requests):
+            tok = sample_token(logits[:, i, :], r.sampling_params, r.output_ids)
+            r.seq_len = r.num_input_tokens
             token_ids.append(tok)
         return token_ids
 
     @torch.inference_mode()
     def paged_decode(self, requests: list[Request]) -> list[int]:
-        """Batched decode in paged mode — one new token per request."""
+        """Decode one token per running request via flash_attn_with_kvcache.
+
+        Pre-condition: scheduler has ensured each request has ≥1 unused
+        slot in its current last page (it tops up by allocating one more
+        page just before this call when the previous page filled).
+        """
         assert self.kv_pool is not None
         if not requests:
             return []
 
-        # Try CUDA graph fast path first.
+        # Try CUDA graph fast path first (extra credit).
         if self.cuda_graph_runner is not None:
             replayed = self.cuda_graph_runner.try_replay(requests)
             if replayed is not None:
                 return replayed
 
-        page_size = self.kv_pool.page_size
         device = self.device
+        B = len(requests)
 
-        input_ids_list: list[int] = []
-        position_ids_list: list[int] = []
-        slot_mapping_list: list[int] = []
-        lengths_after = []
-        page_indices_list: list[list[int]] = []
-
-        # Phase 1: allocate all pages before touching meta.length.
-        # If any allocation fails the exception propagates before any state
-        # is mutated, so callers can safely retry or preempt.
-        old_lens: list[int] = []
-        for req in requests:
-            meta: PagedKVMeta = req.kv_cache  # type: ignore[assignment]
-            old_len = meta.length
-            self._allocate_pages_for(req, old_len + 1)
-            old_lens.append(old_len)
-
-        # Phase 2: all allocations succeeded — update meta and build tensors.
-        for req, old_len in zip(requests, old_lens):
-            meta = req.kv_cache  # type: ignore[assignment]
-            meta.length = old_len + 1
-
-            page_local = old_len // page_size
-            offset = old_len % page_size
-            slot = meta.page_indices[page_local] * page_size + offset
-            slot_mapping_list.append(slot)
-
-            input_ids_list.append(req.output_ids[-1])
-            position_ids_list.append(old_len)
-            lengths_after.append(old_len + 1)
-            page_indices_list.append(list(meta.page_indices))
-
-        batch = len(requests)
-        # batch=batch, seq_len=1 — one new query per request.
         input_ids = torch.tensor(
-            [[t] for t in input_ids_list], dtype=torch.long, device=device
-        ).view(1, batch)  # paged path treats packed dim as the seq axis
+            [[r.output_ids[-1]] for r in requests],
+            dtype=torch.long,
+            device=device,
+        )
         position_ids = torch.tensor(
-            [position_ids_list], dtype=torch.long, device=device
+            [[r.seq_len] for r in requests],
+            dtype=torch.long,
+            device=device,
         )
-        slot_mapping = torch.tensor(slot_mapping_list, dtype=torch.long, device=device)
-        cu_q_t = torch.arange(batch + 1, dtype=torch.int32, device=device)
-        lengths_after_t = torch.tensor(
-            lengths_after, dtype=torch.int32, device=device
-        )
-
-        # Round up to next power of 2 so page_table width (and the derived
-        # max_kv_len inside _paged_attn_forward) only changes at doublings.
-        # This keeps compiled kernel shapes stable across page boundary crossings.
-        max_pages = self._bucket_max_pages(max(len(pt) for pt in page_indices_list))
-        page_table = torch.zeros(batch, max_pages, dtype=torch.int32, device=device)
-        for i, pt in enumerate(page_indices_list):
-            page_table[i, : len(pt)] = torch.tensor(pt, dtype=torch.int32)
-
-        ctx = PagedAttnCtx(
-            kv_caches=self.kv_pool.kv_caches,
-            page_size=page_size,
-            page_indices=page_table,
-            lengths_after=lengths_after_t,
-            slot_mapping=slot_mapping,
-            cu_seqlens_q=cu_q_t,
-            is_decode=True,
+        # cache_seqlens is the KV length BEFORE this step (flash_attn_with_kvcache
+        # writes the new token at this position and reads up to it+1).
+        cache_seqlens = torch.tensor(
+            [r.seq_len for r in requests],
+            dtype=torch.int32,
+            device=device,
         )
 
-        torch.compiler.cudagraph_mark_step_begin()
-        logits, _ = self.model(input_ids, position_ids, paged_ctx=ctx)
-        # logits: (1, batch, vocab). Sample one per request.
-        token_ids: list[int] = []
-        for i, req in enumerate(requests):
-            tok = sample_token(
-                logits[:, i, :], req.sampling_params, req.output_ids
+        max_pages = max(len(r.page_indices) for r in requests)
+        block_table = torch.zeros((B, max_pages), dtype=torch.int32, device=device)
+        for i, r in enumerate(requests):
+            block_table[i, : len(r.page_indices)] = torch.tensor(
+                r.page_indices, dtype=torch.int32, device=device
             )
+
+        meta = PagedMeta(
+            phase="decode",
+            page_size=self.kv_pool.page_size,
+            block_table=block_table,
+            cache_seqlens=cache_seqlens,
+        )
+
+        logits, _ = self.model(
+            input_ids,
+            position_ids,
+            kv_caches=self.kv_pool.kv_caches,
+            paged_meta=meta,
+        )
+        # logits: (B, 1, vocab)
+        token_ids: list[int] = []
+        for i, r in enumerate(requests):
+            tok = sample_token(
+                logits[i : i + 1, -1, :], r.sampling_params, r.output_ids
+            )
+            r.seq_len += 1
             token_ids.append(tok)
         return token_ids

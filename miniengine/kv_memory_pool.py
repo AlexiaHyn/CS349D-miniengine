@@ -43,10 +43,12 @@ import torch
 
 @dataclass
 class PagedKVMeta:
-    """Per-request page-table + length, stored on Request.kv_cache.
+    """Deprecated. Per-request page-table + length used to live here, but
+    we now keep `page_indices` and `seq_len` directly on `Request` so the
+    flash-attn paths can read them without an extra indirection.
 
-    The pool is not aware of these — the engine builds them per request
-    and uses them when reading/writing KV through the pool.
+    Kept as an empty back-compat shim — importing it still works but no
+    code path constructs one.
     """
 
     page_indices: list[int]

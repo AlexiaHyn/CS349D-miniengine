@@ -54,8 +54,16 @@ class Request:
     status: RequestStatus = RequestStatus.WAITING
     arrival_time: float = field(default_factory=time.time)
 
-    # Per-request KV cache (set by Engine during prefill, updated on each decode)
+    # Batched mode: list[(K, V)] tensors written by Engine on prefill and
+    # updated each decode. Paged mode: stays None; KV lives in the pool
+    # indexed by `page_indices` below.
     kv_cache: Any = None
+
+    # Paged mode: pages this request owns (in pool index space) and how
+    # many tokens are stored across them (= num_input_tokens after
+    # prefill, then +1 per decode).
+    page_indices: list[int] = field(default_factory=list)
+    seq_len: int = 0
 
     # Streaming output channel — scheduler pushes, server consumes
     token_queue: queue.Queue = field(default_factory=queue.Queue)

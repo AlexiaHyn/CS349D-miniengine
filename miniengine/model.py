@@ -13,10 +13,18 @@ Architecture (Qwen3-4B as reference):
     LM Head (tied with embedding)
 
 Paged-attention extension (Milestone 2):
-    Each Attention.forward optionally takes a `paged_ctx` PagedAttnCtx
-    that points at the global KV pool (per-layer K/V slabs) plus per-
-    request page tables. When supplied, attention writes new K/V into
-    the pool by slot, and reads the per-request KV by gathering pages.
+    Each Attention.forward optionally takes a `paged_meta` PagedMeta
+    object that describes how the current packed batch maps onto the
+    global KV pool. Attention then dispatches to flash-attn:
+      - prefill: `flash_attn_varlen_func` over packed prompts, with
+        new K/V scattered into the pool by `slot_mapping`.
+      - decode : `flash_attn_with_kvcache` reads K/V via `block_table`
+        and `cache_seqlens` and writes the new token in place.
+
+Block layout note (Milestone 2):
+    `_add_norm_pre` / `_add_norm_post` fuse the residual-add with the
+    next RMSNorm. This lets `torch.compile` form a single Inductor
+    region per (residual+norm) pair, fewer kernel launches per layer.
 """
 
 from __future__ import annotations
@@ -110,21 +118,27 @@ class RotaryEmbedding(nn.Module):
         self._sin: torch.Tensor | None = None
         self._cached_len: int = 0
 
-    def _extend_cache(self, min_length: int) -> None:
-        length = max(min_length, self._cached_len * 2, 256)
+    @torch.no_grad()
+    def extend_to(self, length: int) -> None:
+        """Pre-build the cos/sin cache up to `length` positions.
+
+        Call this at engine startup so that `forward` never trips the
+        lazy-grow branch (which calls `.item()` and graph-breaks under
+        torch.compile / CUDA-graph capture).
+        """
+        if self._cos is not None and length <= self._cached_len:
+            return
         t = torch.arange(
             length, device=self.inv_freq.device, dtype=self.inv_freq.dtype
         )
-        freqs = torch.outer(t, self.inv_freq)  # (length, head_dim/2)
-        emb = torch.cat([freqs, freqs], dim=-1)  # (length, head_dim)
+        freqs = torch.outer(t, self.inv_freq)
+        emb = torch.cat([freqs, freqs], dim=-1)
         self._cos = emb.cos()
         self._sin = emb.sin()
         self._cached_len = length
 
-    def warmup(self, max_seq_len: int) -> None:
-        """Pre-extend the RoPE cache so the serving hot-path never calls .item()."""
-        if max_seq_len > self._cached_len:
-            self._extend_cache(max_seq_len)
+    # Back-compat alias; older code called this method `extend`.
+    extend = extend_to
 
     @torch.no_grad()
     def forward(self, position_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -136,9 +150,13 @@ class RotaryEmbedding(nn.Module):
             cos, sin each of shape (batch, 1, seq_len, head_dim) —
             broadcastable over the head dimension.
         """
-        max_pos = int(position_ids.max().item()) + 1
-        if self._cos is None or max_pos > self._cached_len:
-            self._extend_cache(max_pos)
+        if self._cos is None or (
+            int(position_ids.max().item()) + 1 > self._cached_len
+        ):
+            self.extend_to(
+                max(int(position_ids.max().item()) + 1, self._cached_len * 2, 256)
+            )
+
         # Index into cache: (batch, seq_len, head_dim) → add head dim
         cos = self._cos[position_ids].unsqueeze(2)  # (batch, seq_len, 1, head_dim)
         sin = self._sin[position_ids].unsqueeze(2)
@@ -167,212 +185,56 @@ def apply_rotary_emb(
     return x * cos + _rotate_half(x) * sin
 
 
-# ── Paged attention support ─────────────────────────────────────────────
+# ── Paged attention metadata ────────────────────────────────────────────
 
 
 @dataclass
-class PagedAttnCtx:
-    """Per-step context for paged attention.
+class PagedMeta:
+    """Per-step metadata for paged attention.
 
-    Fields are layer-agnostic (page_indices/lengths/slot_mapping describe
-    where each token lives in the pool); the layer index selects the
-    right slab from `kv_caches`.
+    Prefill uses cu_seqlens_* + slot_mapping (varlen flash-attn).
+    Decode uses block_table + cache_seqlens (paged-kv flash-attn).
 
     Attributes
     ----------
-    kv_caches:
-        The pool's stable per-layer (K, V) tensors.
-        Shape per slab: (num_pages, page_size, num_kv_heads, head_dim).
-    page_size:
-        Tokens per page (matches the pool).
-    page_indices:
-        Padded int32 tensor of shape (batch, max_num_pages). For
-        request i its first lengths[i]/page_size+1 entries are valid.
-    lengths_after:
-        int32 tensor (batch,) — KV length AFTER writing the new tokens
-        from this forward (= old length + new tokens for that request).
-    slot_mapping:
-        int64 tensor (total_new_tokens,) — flat slot indices into a
-        per-layer K (or V) viewed as (num_pages * page_size, kv_heads,
-        head_dim). One entry per *new* token in execution order.
-        Used to write fresh K/V into the pool.
-    cu_seqlens_q:
-        Optional int32 tensor (batch + 1,) cumulative query lengths.
-        Provided by packed prefill (batch dim is collapsed). None for
-        decode (single-token-per-request, packed in sequence dim).
-    is_decode:
-        True if every request contributes exactly one new query token.
-        Decode can use a tighter attention path (no causal mask within
-        the new tokens).
+    phase: "prefill" or "decode".
+    page_size: tokens per page (matches the pool).
+
+    Prefill fields:
+        cu_seqlens_q / cu_seqlens_k:
+            int32 (batch+1,) cumulative seqlens for the packed prompts.
+        max_seqlen_q / max_seqlen_k: int — longest prompt in the batch.
+        slot_mapping:
+            int64 (total_prompt_tokens,) flat slot indices into a per-layer
+            K (or V) view of shape (num_pages * page_size, kv_heads, head_dim).
+
+    Decode fields:
+        block_table:
+            int32 (batch, max_pages) per-request page tables.
+        cache_seqlens:
+            int32 (batch,) current KV length per request BEFORE writing
+            this step's new token; flash_attn_with_kvcache writes at
+            this position and reads up to it+1.
     """
 
-    kv_caches: list[tuple[torch.Tensor, torch.Tensor]]
+    phase: str
     page_size: int
-    page_indices: torch.Tensor
-    lengths_after: torch.Tensor
-    slot_mapping: torch.Tensor
+
+    # Prefill
     cu_seqlens_q: torch.Tensor | None = None
-    is_decode: bool = False
+    cu_seqlens_k: torch.Tensor | None = None
+    max_seqlen_q: int = 0
+    max_seqlen_k: int = 0
+    slot_mapping: torch.Tensor | None = None
+
+    # Decode
+    block_table: torch.Tensor | None = None
+    cache_seqlens: torch.Tensor | None = None
 
 
-def _paged_attn_forward(
-    q: torch.Tensor,                # (1, num_heads, total_q, head_dim) packed
-    k_new: torch.Tensor,            # (1, num_kv_heads, total_q, head_dim) packed
-    v_new: torch.Tensor,            # (1, num_kv_heads, total_q, head_dim) packed
-    paged_ctx: PagedAttnCtx,
-    layer_idx: int,
-    num_kv_groups: int,
-) -> torch.Tensor:
-    """Paged attention: write new K/V into pool, then attend per request.
-
-    Returns out: (1, num_heads, total_q, head_dim) packed.
-
-    Two internal paths share the same write step but differ in how they read:
-
-    Decode (is_decode=True):
-        Fully batched, fixed-shape — no Python branching on tensor values.
-        All requests are processed in a single batched SDPA call with a
-        float mask derived from lengths_after. This path is CUDA-graph-
-        compatible because no .tolist() or .item() is called.
-
-    Prefill (is_decode=False):
-        Per-request Python loop with .tolist() to handle variable q_lens
-        and causal masking. Shapes vary per request, so this path is NOT
-        CUDA-graph-compatible. Prefill is never captured in graphs.
-    """
-    K_pool, V_pool = paged_ctx.kv_caches[layer_idx]
-    num_pages, page_size, num_kv_heads, head_dim = K_pool.shape
-
-    # Flat views into the per-layer slab for slot-indexed scatter-write.
-    K_flat = K_pool.view(num_pages * page_size, num_kv_heads, head_dim)
-    V_flat = V_pool.view(num_pages * page_size, num_kv_heads, head_dim)
-
-    total_q = k_new.shape[2]
-    # (total_q, kv_heads, head_dim) for index_copy_
-    k_pack = k_new.squeeze(0).transpose(0, 1).contiguous()
-    v_pack = v_new.squeeze(0).transpose(0, 1).contiguous()
-    K_flat.index_copy_(0, paged_ctx.slot_mapping, k_pack)
-    V_flat.index_copy_(0, paged_ctx.slot_mapping, v_pack)
-
-    batch = paged_ctx.page_indices.shape[0]
-    num_heads = q.shape[1]
-    # q_pack: (total_q, num_heads, head_dim)
-    q_pack = q.squeeze(0).transpose(0, 1).contiguous()
-
-    if paged_ctx.is_decode:
-        # ── Fully batched, fixed-shape decode path ──────────────────────
-        # For decode total_q == batch (one new token per request).
-        # All tensor shapes are fixed at capture time → CUDA-graph-safe.
-        page_indices = paged_ctx.page_indices   # (batch, max_pages) int32
-        lengths_after = paged_ctx.lengths_after  # (batch,) int32
-        max_num_pages = page_indices.shape[1]
-        max_kv_len = max_num_pages * page_size
-
-        # Gather every page of every request in one index op.
-        # Padding entries in page_indices (zeros) fetch page 0 of the pool;
-        # those positions are masked to -inf in attn_mask below.
-        flat_idx = page_indices.view(-1).long()          # (batch * max_pages,)
-        k_all = K_pool[flat_idx].reshape(batch, max_kv_len, num_kv_heads, head_dim)
-        v_all = V_pool[flat_idx].reshape(batch, max_kv_len, num_kv_heads, head_dim)
-        # → (batch, kv_heads, max_kv_len, head_dim)
-        k_all = k_all.transpose(1, 2)
-        v_all = v_all.transpose(1, 2)
-
-        if num_kv_groups > 1:
-            k_all = (
-                k_all[:, :, None, :, :]
-                .expand(-1, -1, num_kv_groups, -1, -1)
-                .reshape(batch, num_heads, max_kv_len, head_dim)
-            )
-            v_all = (
-                v_all[:, :, None, :, :]
-                .expand(-1, -1, num_kv_groups, -1, -1)
-                .reshape(batch, num_heads, max_kv_len, head_dim)
-            )
-
-        # Float attention mask: 0 for valid KV positions, -inf for padding.
-        # Computed entirely with tensor ops — no .tolist() / .item().
-        # positions: (1, max_kv_len);  lengths_after: (batch, 1) after unsqueeze
-        positions = torch.arange(max_kv_len, device=q.device).unsqueeze(0)
-        invalid = positions >= lengths_after.to(torch.int64).unsqueeze(1)  # (batch, max_kv_len)
-        attn_mask = torch.zeros(
-            batch, 1, 1, max_kv_len, device=q.device, dtype=q.dtype
-        ).masked_fill(invalid.unsqueeze(1).unsqueeze(2), float("-inf"))
-
-        # q_pack: (batch, num_heads, head_dim) → (batch, num_heads, 1, head_dim)
-        q_batch = q_pack.unsqueeze(2)
-        out_i = F.scaled_dot_product_attention(q_batch, k_all, v_all, attn_mask=attn_mask)
-        # (batch, num_heads, 1, head_dim) → (batch, num_heads, head_dim)
-        out_pack = out_i.squeeze(2)
-    else:
-        # ── Per-request loop path (prefill only) ────────────────────────
-        if paged_ctx.cu_seqlens_q is not None:
-            cu_q = paged_ctx.cu_seqlens_q
-        else:
-            cu_q = torch.arange(batch + 1, device=q.device, dtype=torch.int32)
-
-        lengths_after_list = paged_ctx.lengths_after.tolist()
-        cu_q_list = cu_q.tolist()
-        page_indices = paged_ctx.page_indices  # (batch, max_pages)
-
-        out_pack = torch.zeros(total_q, num_heads, head_dim, device=q.device, dtype=q.dtype)
-
-        for i in range(batch):
-            q_start = cu_q_list[i]
-            q_end = cu_q_list[i + 1]
-            q_len = q_end - q_start
-            if q_len == 0:
-                continue
-
-            kv_len = lengths_after_list[i]
-            if kv_len == 0:
-                continue
-
-            n_pages = (kv_len + page_size - 1) // page_size
-            idx = page_indices[i, :n_pages].long()
-            gathered_k = K_pool.index_select(0, idx)
-            gathered_v = V_pool.index_select(0, idx)
-            k_seq = gathered_k.reshape(n_pages * page_size, num_kv_heads, head_dim)[:kv_len]
-            v_seq = gathered_v.reshape(n_pages * page_size, num_kv_heads, head_dim)[:kv_len]
-
-            # (1, kv_heads, kv_len, head_dim)
-            k_seq = k_seq.transpose(0, 1).unsqueeze(0)
-            v_seq = v_seq.transpose(0, 1).unsqueeze(0)
-
-            if num_kv_groups > 1:
-                k_seq = (
-                    k_seq[:, :, None, :, :]
-                    .expand(-1, -1, num_kv_groups, -1, -1)
-                    .reshape(1, num_kv_heads * num_kv_groups, kv_len, head_dim)
-                )
-                v_seq = (
-                    v_seq[:, :, None, :, :]
-                    .expand(-1, -1, num_kv_groups, -1, -1)
-                    .reshape(1, num_kv_heads * num_kv_groups, kv_len, head_dim)
-                )
-
-            # (1, num_heads, q_len, head_dim)
-            q_i = q_pack[q_start:q_end].transpose(0, 1).unsqueeze(0)
-
-            if q_len == 1:
-                out_i = F.scaled_dot_product_attention(q_i, k_seq, v_seq, is_causal=False)
-            else:
-                # Causal mask: row r (absolute pos kv_len-q_len+r) attends to col c ≤ row.
-                offset = kv_len - q_len
-                row = torch.arange(q_len, device=q.device).unsqueeze(1) + offset
-                col = torch.arange(kv_len, device=q.device).unsqueeze(0)
-                mask = torch.where(
-                    col <= row,
-                    torch.zeros((), dtype=q.dtype, device=q.device),
-                    torch.full((), float("-inf"), dtype=q.dtype, device=q.device),
-                )
-                out_i = F.scaled_dot_product_attention(q_i, k_seq, v_seq, attn_mask=mask)
-
-            # (1, num_heads, q_len, hd) → (q_len, num_heads, hd)
-            out_pack[q_start:q_end] = out_i.squeeze(0).transpose(0, 1)
-
-    # (total_q, num_heads, head_dim) → (1, num_heads, total_q, head_dim)
-    return out_pack.transpose(0, 1).unsqueeze(0).contiguous()
+# Back-compat alias: some callers (e.g. cuda_graph_runner) imported
+# `PagedAttnCtx`. Keep the symbol so existing imports don't break.
+PagedAttnCtx = PagedMeta
 
 
 # ── Attention ───────────────────────────────────────────────────────────
@@ -413,6 +275,27 @@ class Attention(nn.Module):
         self.q_norm = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
         self.k_norm = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
 
+    def _proj_qkv_with_rope(
+        self, hidden: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Project + QK-norm + RoPE.
+
+        Returns q, k as (B, H, S, D) for SDPA / SDPA-callers; v as
+        (B, S, H_kv, D) for the flash-attn paths (the contiguous-cache
+        path transposes v itself).
+        """
+        bsz, seq_len, _ = hidden.shape
+        q = self.q_proj(hidden).view(bsz, seq_len, self.num_heads, self.head_dim)
+        k = self.k_proj(hidden).view(bsz, seq_len, self.num_kv_heads, self.head_dim)
+        v = self.v_proj(hidden).view(bsz, seq_len, self.num_kv_heads, self.head_dim)
+        q = self.q_norm(q)
+        k = self.k_norm(k)
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        q = apply_rotary_emb(q, cos, sin)
+        k = apply_rotary_emb(k, cos, sin)
+        return q, k, v
+
     def forward(
         self,
         hidden: torch.Tensor,
@@ -420,66 +303,37 @@ class Attention(nn.Module):
         sin: torch.Tensor,
         kv_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
         attention_mask: torch.Tensor | None = None,
-        paged_ctx: PagedAttnCtx | None = None,
-        layer_idx: int = 0,
+        paged_meta: PagedMeta | None = None,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
-        """
-        Args:
-            hidden:         (batch, seq_len, hidden_size). For paged mode
-                            batch=1 and seq_len = total packed tokens.
-            cos, sin:       from RotaryEmbedding, broadcastable
-            kv_cache:       optional (cached_k, cached_v) for non-paged
-                            mode; (batch, num_kv_heads, cache_len, head_dim)
-            attention_mask: optional float mask (batch, 1, q_len, kv_len)
-                            for batched decode with padded KV; 0 = attend,
-                            -inf = ignore.
-            paged_ctx:      if set, run paged attention through the pool
-                            instead of using the local kv_cache argument.
-            layer_idx:      this attention layer's index, used to pick the
-                            right slab from paged_ctx.kv_caches.
+        """If paged_meta is set, attention runs through the KV pool and
+        returns (out, None); otherwise SDPA on per-request kv_cache.
 
-        Returns:
-            output:       (batch, seq_len, hidden_size)
-            new_kv_cache: (k, v) with updated cache, or None for paged
-                          mode (KV is stored back into the pool in place).
+        Args:
+            hidden: (batch, seq_len, hidden_size)
+            cos, sin: from RotaryEmbedding
+            kv_cache:
+                Contiguous-cache mode: optional (cached_k, cached_v).
+                Paged mode: pass the pool's per-LAYER (k_pool, v_pool)
+                slab tuple (the caller in TransformerModel selects layer i).
+            attention_mask:
+                Float mask (batch, 1, q_len, kv_len) for batched-decode
+                padded-KV path. 0 = attend, -inf = ignore.
+            paged_meta:
+                If set, dispatch to the flash-attn paged path and ignore
+                `attention_mask`.
         """
         bsz, seq_len, _ = hidden.shape
+        q, k, v = self._proj_qkv_with_rope(hidden, cos, sin)
 
-        # Project Q, K, V and reshape to (batch, heads, seq_len, head_dim)
-        q = (
-            self.q_proj(hidden)
-            .view(bsz, seq_len, self.num_heads, self.head_dim)
-            .transpose(1, 2)
-        )
-        k = (
-            self.k_proj(hidden)
-            .view(bsz, seq_len, self.num_kv_heads, self.head_dim)
-            .transpose(1, 2)
-        )
-        v = (
-            self.v_proj(hidden)
-            .view(bsz, seq_len, self.num_kv_heads, self.head_dim)
-            .transpose(1, 2)
-        )
+        # ── Paged path (flash-attn) ─────────────────────────────────────
+        if paged_meta is not None:
+            return self._forward_paged(q, k, v, kv_cache, paged_meta)
 
-        # QK-Norm
-        q = self.q_norm(q)
-        k = self.k_norm(k)
+        # ── Legacy contiguous-cache path (baseline + batched modes) ─────
+        # v from _proj_qkv_with_rope is (B, S, H_kv, D); the contiguous-
+        # cache path needs (B, H_kv, S, D).
+        v = v.transpose(1, 2)
 
-        # RoPE
-        q = apply_rotary_emb(q, cos, sin)
-        k = apply_rotary_emb(k, cos, sin)
-
-        # ── Paged path ──────────────────────────────────────────────────
-        if paged_ctx is not None:
-            out = _paged_attn_forward(
-                q, k, v, paged_ctx, layer_idx, self.num_kv_groups
-            )
-            out = out.transpose(1, 2).contiguous().view(bsz, seq_len, -1)
-            return self.o_proj(out), None
-
-        # ── Legacy contiguous-cache path ────────────────────────────────
-        # Append to KV cache
         if kv_cache is not None:
             k = torch.cat([kv_cache[0], k], dim=2)
             v = torch.cat([kv_cache[1], v], dim=2)
@@ -492,46 +346,116 @@ class Attention(nn.Module):
             v = v[:, :, None, :, :].expand(-1, -1, self.num_kv_groups, -1, -1)
             v = v.reshape(bsz, self.num_heads, -1, self.head_dim)
 
-        # Batched decode passes an explicit float mask; otherwise fall
-        # back to the is_causal kernel path.
         if attention_mask is not None:
             out = F.scaled_dot_product_attention(q, k, v, attn_mask=attention_mask)
         else:
             is_causal = kv_cache is None and seq_len > 1
             out = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
 
-        # Merge heads → project back
         out = out.transpose(1, 2).contiguous().view(bsz, seq_len, -1)
         return self.o_proj(out), new_kv
+
+    def _forward_paged(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        kv_cache: tuple[torch.Tensor, torch.Tensor],
+        meta: PagedMeta,
+    ) -> tuple[torch.Tensor, None]:
+        """Paged attention via flash-attn (varlen prefill / paged-kv decode).
+
+        Args:
+            q, k: (B, H, S, D) from `_proj_qkv_with_rope`.
+            v: (B, S, H_kv, D).
+            kv_cache: this layer's (k_pool, v_pool) slabs from the pool.
+                Shape: (num_pages, page_size, num_kv_heads, head_dim).
+        """
+        # flash-attn wants (B, S, H, D); undo the transpose RoPE produced.
+        q = q.transpose(1, 2).contiguous()
+        k = k.transpose(1, 2).contiguous()
+        v = v.contiguous()
+        bsz, seq_len = q.shape[0], q.shape[1]
+        k_pool, v_pool = kv_cache
+
+        if meta.phase == "prefill":
+            from flash_attn import flash_attn_varlen_func
+
+            # Prompts are packed as B=1 → squeeze to (sum_q, H, D).
+            q_p, k_p, v_p = q.squeeze(0), k.squeeze(0), v.squeeze(0)
+
+            # Scatter K/V into the pool by absolute slot index.
+            k_pool.view(-1, self.num_kv_heads, self.head_dim)[meta.slot_mapping] = k_p
+            v_pool.view(-1, self.num_kv_heads, self.head_dim)[meta.slot_mapping] = v_p
+
+            out = flash_attn_varlen_func(
+                q_p,
+                k_p,
+                v_p,
+                cu_seqlens_q=meta.cu_seqlens_q,
+                cu_seqlens_k=meta.cu_seqlens_k,
+                max_seqlen_q=meta.max_seqlen_q,
+                max_seqlen_k=meta.max_seqlen_k,
+                causal=True,
+            )
+            out = out.unsqueeze(0)
+        else:
+            from flash_attn import flash_attn_with_kvcache
+
+            # Kernel writes (k, v) into the pool at the slots specified
+            # by block_table + cache_seqlens AND attends. One call,
+            # zero per-layer Python.
+            out = flash_attn_with_kvcache(
+                q,
+                k_pool,
+                v_pool,
+                k=k,
+                v=v,
+                cache_seqlens=meta.cache_seqlens,
+                block_table=meta.block_table,
+                causal=True,
+            )
+
+        out = out.contiguous().view(bsz, seq_len, -1)
+        return self.o_proj(out), None
 
 
 # ── MLP ─────────────────────────────────────────────────────────────────
 
 
 class MLP(nn.Module):
-    """SwiGLU feed-forward: down(silu(gate(x)) * up(x))."""
+    """SwiGLU: down(silu(gate(x)) * up(x)).
+
+    `gate_proj` and `up_proj` are fused into a single matmul (weight =
+    cat([gate_w, up_w], dim=0)) — saves one cuBLAS launch and one read
+    of x per layer. `load_weights` rewrites the checkpoint keys to match.
+    """
 
     def __init__(self, config: ModelConfig):
         super().__init__()
-        self.gate_proj = nn.Linear(
-            config.hidden_size, config.intermediate_size, bias=False
-        )
-        self.up_proj = nn.Linear(
-            config.hidden_size, config.intermediate_size, bias=False
+        self.gate_up_proj = nn.Linear(
+            config.hidden_size, 2 * config.intermediate_size, bias=False
         )
         self.down_proj = nn.Linear(
             config.intermediate_size, config.hidden_size, bias=False
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+        gate_up = self.gate_up_proj(x)
+        gate, up = gate_up.chunk(2, dim=-1)
+        return self.down_proj(F.silu(gate) * up)
 
 
 # ── Transformer block ──────────────────────────────────────────────────
 
 
 class TransformerBlock(nn.Module):
-    """Pre-norm transformer layer: LN → Attn → residual → LN → MLP → residual."""
+    """Pre-norm transformer layer: LN → Attn → residual → LN → MLP → residual.
+
+    The residual-add is fused with the FOLLOWING RMSNorm in
+    `_add_norm_pre` / `_add_norm_post` so torch.compile can pack each
+    pair into a single Inductor region.
+    """
 
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -542,29 +466,53 @@ class TransformerBlock(nn.Module):
             config.hidden_size, eps=config.rms_norm_eps
         )
 
+    def _add_norm_pre(
+        self, residual: torch.Tensor, x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Fused (residual + x) → input_layernorm.
+
+        Returns (normed, new_residual).
+        """
+        residual = residual + x
+        return self.input_layernorm(residual), residual
+
+    def _add_norm_post(
+        self, residual: torch.Tensor, x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Fused (residual + x) → post_attention_layernorm."""
+        residual = residual + x
+        return self.post_attention_layernorm(residual), residual
+
     def forward(
         self,
         hidden: torch.Tensor,
         cos: torch.Tensor,
         sin: torch.Tensor,
+        residual: torch.Tensor | None = None,
         kv_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
         attention_mask: torch.Tensor | None = None,
-        paged_ctx: PagedAttnCtx | None = None,
-        layer_idx: int = 0,
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
-        residual = hidden
-        hidden = self.input_layernorm(hidden)
+        paged_meta: PagedMeta | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
+        """Block forward with explicit residual passing.
+
+        The first block in a stack receives residual=None and seeds the
+        residual stream from the embedding output. Subsequent blocks
+        accept (hidden, residual) and return (mlp_out, residual_after_attn).
+        The caller applies the final `residual + hidden` after the last
+        block (see TransformerModel.forward).
+        """
+        if residual is None:
+            residual = hidden
+            hidden = self.input_layernorm(hidden)
+        else:
+            hidden, residual = self._add_norm_pre(residual, hidden)
+
         hidden, new_kv = self.self_attn(
-            hidden, cos, sin, kv_cache, attention_mask, paged_ctx, layer_idx
+            hidden, cos, sin, kv_cache, attention_mask, paged_meta
         )
-        hidden = residual + hidden
-
-        residual = hidden
-        hidden = self.post_attention_layernorm(hidden)
+        hidden, residual = self._add_norm_post(residual, hidden)
         hidden = self.mlp(hidden)
-        hidden = residual + hidden
-
-        return hidden, new_kv
+        return hidden, residual, new_kv
 
 
 # ── Full model ──────────────────────────────────────────────────────────
@@ -588,42 +536,53 @@ class TransformerModel(nn.Module):
         position_ids: torch.Tensor,
         kv_caches: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
         attention_mask: torch.Tensor | None = None,
-        paged_ctx: PagedAttnCtx | None = None,
+        paged_meta: PagedMeta | None = None,
     ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]] | None]:
         """
         Args:
-            input_ids:      (batch, seq_len)
-            position_ids:   (batch, seq_len)
-            kv_caches:      list of per-layer (key, value) caches, or None
+            input_ids:     (batch, seq_len)
+            position_ids:  (batch, seq_len)
+            kv_caches:
+                Contiguous-cache mode: list of per-layer (key, value) caches,
+                or None for prefill.
+                Paged mode: the pool's per-layer (k_pool, v_pool) slab list.
             attention_mask: optional float mask for batched-decode SDPA
-            paged_ctx:      if set, use the paged-attention pool instead
-                            of contiguous per-request caches.
+            paged_meta:    if set, use the paged-attention path.
 
         Returns:
-            hidden:         (batch, seq_len, hidden_size)
-            new_kv_caches:  list of per-layer (key, value) with appended
-                            tokens, or None when paged_ctx is used
-                            (KV is stored in the pool).
+            hidden:        (batch, seq_len, hidden_size)
+            new_kv_caches: list of per-layer (key, value) caches with the
+                            new tokens appended, or None in paged mode
+                            (KV is updated in place inside the pool).
         """
         hidden = self.embed_tokens(input_ids)
         cos, sin = self.rotary_emb(position_ids)
 
-        if paged_ctx is not None:
+        if paged_meta is not None:
+            residual: torch.Tensor | None = None
             for i, layer in enumerate(self.layers):
-                hidden, _ = layer(
-                    hidden, cos, sin, None, None, paged_ctx, i,
+                hidden, residual, _ = layer(
+                    hidden,
+                    cos,
+                    sin,
+                    residual,
+                    kv_caches[i],  # this layer's pool slab
+                    None,
+                    paged_meta,
                 )
-            hidden = self.norm(hidden)
-            return hidden, None
+            hidden = residual + hidden
+            return self.norm(hidden), None
 
         new_kv_caches: list[tuple[torch.Tensor, torch.Tensor]] = []
+        residual = None
         for i, layer in enumerate(self.layers):
             kv = kv_caches[i] if kv_caches is not None else None
-            hidden, new_kv = layer(hidden, cos, sin, kv, attention_mask)
+            hidden, residual, new_kv = layer(
+                hidden, cos, sin, residual, kv, attention_mask
+            )
             new_kv_caches.append(new_kv)
-
-        hidden = self.norm(hidden)
-        return hidden, new_kv_caches
+        hidden = residual + hidden
+        return self.norm(hidden), new_kv_caches
 
 
 class CausalLM(nn.Module):
@@ -646,7 +605,7 @@ class CausalLM(nn.Module):
         position_ids: torch.Tensor,
         kv_caches: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
         attention_mask: torch.Tensor | None = None,
-        paged_ctx: PagedAttnCtx | None = None,
+        paged_meta: PagedMeta | None = None,
     ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]] | None]:
         """
         Returns:
@@ -654,7 +613,7 @@ class CausalLM(nn.Module):
             new_kv_caches: per-layer KV caches, or None for paged mode.
         """
         hidden, new_kv_caches = self.model(
-            input_ids, position_ids, kv_caches, attention_mask, paged_ctx
+            input_ids, position_ids, kv_caches, attention_mask, paged_meta
         )
         if self.config.tie_word_embeddings:
             logits = F.linear(hidden, self.model.embed_tokens.weight)
@@ -678,6 +637,10 @@ def load_weights(
     Handles both single-file and sharded checkpoints.  Weight names in the
     checkpoint match our module hierarchy exactly (by design), so we can
     use load_state_dict() directly.
+
+    On the way in we also fuse `mlp.gate_proj.weight` + `mlp.up_proj.weight`
+    into the new `mlp.gate_up_proj.weight` (gate first, to match
+    `MLP.forward`'s `chunk(2)` order).
     """
     from huggingface_hub import snapshot_download
     from safetensors.torch import load_file
@@ -705,6 +668,23 @@ def load_weights(
     for f in st_files:
         for key, tensor in load_file(str(f), device=device).items():
             state_dict[key] = tensor.to(dtype=dtype)
+
+    # ── Fuse mlp.gate_proj + mlp.up_proj → mlp.gate_up_proj ────────────
+    # Order is gate first, up second, matching MLP.forward's chunk(2).
+    fused = 0
+    gate_keys = [k for k in list(state_dict.keys())
+                 if k.endswith(".mlp.gate_proj.weight")]
+    for gk in gate_keys:
+        uk = gk.replace(".gate_proj.", ".up_proj.")
+        if uk not in state_dict:
+            continue
+        new_key = gk.replace(".gate_proj.", ".gate_up_proj.")
+        state_dict[new_key] = torch.cat([state_dict[gk], state_dict[uk]], dim=0)
+        del state_dict[gk]
+        del state_dict[uk]
+        fused += 1
+    if fused:
+        logger.info("Fused gate_proj+up_proj → gate_up_proj on %d MLP blocks", fused)
 
     # Drop checkpoint keys the model doesn't expect.
     model_keys = set(model.state_dict().keys())

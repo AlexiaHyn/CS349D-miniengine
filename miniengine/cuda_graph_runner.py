@@ -14,6 +14,10 @@ invariants:
 We capture only the model forward — sampling stays outside the graph
 since per-request top-k/top-p with multinomial + .item() would break
 capture.
+
+This runner targets the flash-attn paged-kv decode path (see
+`Engine.paged_decode`): persistent input buffers map 1:1 to the
+`PagedMeta(phase="decode")` fields plus `input_ids` / `position_ids`.
 """
 
 from __future__ import annotations
@@ -24,8 +28,7 @@ from dataclasses import dataclass
 import torch
 
 from miniengine.core import Request
-from miniengine.kv_memory_pool import PagedKVMeta
-from miniengine.model import PagedAttnCtx
+from miniengine.model import PagedMeta
 from miniengine.sampler import sample_token
 
 logger = logging.getLogger(__name__)
@@ -37,18 +40,16 @@ class _BucketGraph:
     max_pages: int
     graph: torch.cuda.CUDAGraph
     # Persistent input buffers (we copy_ into these every replay).
-    input_ids: torch.Tensor
-    position_ids: torch.Tensor
-    slot_mapping: torch.Tensor
-    page_table: torch.Tensor
-    lengths_after: torch.Tensor
-    cu_seqlens_q: torch.Tensor
+    input_ids: torch.Tensor      # (B, 1) long
+    position_ids: torch.Tensor   # (B, 1) long
+    block_table: torch.Tensor    # (B, max_pages) int32
+    cache_seqlens: torch.Tensor  # (B,) int32
     # Persistent output buffer.
-    logits: torch.Tensor
+    logits: torch.Tensor         # (B, 1, vocab) — same shape as model output
 
 
 class CudaGraphRunner:
-    """Captures one graph per (bucket_batch_size) for paged decode replay.
+    """Captures one CUDA graph per bucket batch size for paged decode replay.
 
     `try_replay(requests)` returns sampled token_ids if it could route
     the call through a captured graph, else None (caller falls back to
@@ -70,7 +71,7 @@ class CudaGraphRunner:
     # ── Capture ─────────────────────────────────────────────────────────
 
     def capture(self) -> None:
-        """Capture all bucket graphs. Must be called after model is ready."""
+        """Capture all bucket graphs. Must be called after the model is ready."""
         if self._captured:
             return
         if not torch.cuda.is_available():
@@ -78,27 +79,26 @@ class CudaGraphRunner:
             return
 
         engine = self.engine
-        device = engine.device
-        # Warm up dynamo / kernels so first capture doesn't include init.
-        for _ in range(3):
-            self._dummy_forward(self.bucket_batch_sizes[0])
-
-        # Pre-warm the RoPE cache to cover the maximum decode position the
-        # graph will ever encounter.  The dummy forwards above only use
-        # position_ids=0, leaving _cached_len=256.  During graph replay,
-        # position_ids equals the current KV length, which can be as large
-        # as max_pages * page_size.  If that exceeds _cached_len the
-        # recorded index-gather on self._cos would be out-of-bounds.
         pool = engine.kv_pool
-        page_size = pool.page_size if pool is not None else 32
+        if pool is None:
+            raise RuntimeError("CudaGraphRunner.capture() requires a paged KV pool")
+
+        device = engine.device
+        page_size = pool.page_size
+
+        # Pre-extend the RoPE cache to cover the maximum decode position
+        # the graph will ever encounter — the lazy-grow path in the
+        # forward calls .item() and would graph-break.
         max_decode_pos = self.max_pages * page_size
-        warm_pos = torch.arange(max_decode_pos, device=device).unsqueeze(0)
-        with torch.inference_mode():
-            engine.model.model.rotary_emb(warm_pos)
+        engine.model.model.rotary_emb.extend_to(max_decode_pos)
         logger.info(
             "RoPE cache pre-warmed to %d positions (max_pages=%d, page_size=%d)",
             max_decode_pos, self.max_pages, page_size,
         )
+
+        # Warm up dynamo / kernels so first capture doesn't include init.
+        for _ in range(3):
+            self._dummy_forward(self.bucket_batch_sizes[0])
 
         for bs in self.bucket_batch_sizes:
             self._graphs[bs] = self._capture_one(bs)
@@ -111,35 +111,32 @@ class CudaGraphRunner:
         pool = engine.kv_pool
         if pool is None or pool.num_free < batch_size:
             return
-        # Allocate one page per dummy request, run a forward, free.
-        page_indices = pool.allocate(batch_size)
         device = engine.device
+        page_size = pool.page_size
 
-        input_ids = torch.zeros(1, batch_size, dtype=torch.long, device=device)
-        position_ids = torch.zeros(1, batch_size, dtype=torch.long, device=device)
-        slot_mapping = torch.tensor(
-            [pi * pool.page_size for pi in page_indices],
-            dtype=torch.long, device=device,
-        )
-        page_table = torch.tensor(
-            [[pi] for pi in page_indices], dtype=torch.int32, device=device
-        )
-        lengths_after = torch.ones(batch_size, dtype=torch.int32, device=device)
-        cu_q = torch.arange(batch_size + 1, dtype=torch.int32, device=device)
+        page_indices = pool.allocate(batch_size)
+        try:
+            input_ids = torch.zeros(batch_size, 1, dtype=torch.long, device=device)
+            position_ids = torch.zeros(batch_size, 1, dtype=torch.long, device=device)
+            block_table = torch.tensor(
+                [[pi] for pi in page_indices], dtype=torch.int32, device=device
+            )
+            cache_seqlens = torch.zeros(batch_size, dtype=torch.int32, device=device)
 
-        ctx = PagedAttnCtx(
-            kv_caches=pool.kv_caches,
-            page_size=pool.page_size,
-            page_indices=page_table,
-            lengths_after=lengths_after,
-            slot_mapping=slot_mapping,
-            cu_seqlens_q=cu_q,
-            is_decode=True,
-        )
-        with torch.inference_mode():
-            engine.model(input_ids, position_ids, paged_ctx=ctx)
-        torch.cuda.synchronize()
-        pool.free(page_indices)
+            meta = PagedMeta(
+                phase="decode",
+                page_size=page_size,
+                block_table=block_table,
+                cache_seqlens=cache_seqlens,
+            )
+            with torch.inference_mode():
+                engine.model(
+                    input_ids, position_ids,
+                    kv_caches=pool.kv_caches, paged_meta=meta,
+                )
+            torch.cuda.synchronize()
+        finally:
+            pool.free(page_indices)
 
     def _capture_one(self, batch_size: int) -> _BucketGraph:
         engine = self.engine
@@ -147,35 +144,38 @@ class CudaGraphRunner:
         device = engine.device
         max_pages = self.max_pages
 
-        input_ids = torch.zeros(1, batch_size, dtype=torch.long, device=device)
-        position_ids = torch.zeros(1, batch_size, dtype=torch.long, device=device)
-        slot_mapping = torch.zeros(batch_size, dtype=torch.long, device=device)
-        page_table = torch.zeros(batch_size, max_pages, dtype=torch.int32, device=device)
-        lengths_after = torch.ones(batch_size, dtype=torch.int32, device=device)
-        cu_q = torch.arange(batch_size + 1, dtype=torch.int32, device=device)
+        # Persistent input/output buffers — same identities every replay.
+        input_ids = torch.zeros(batch_size, 1, dtype=torch.long, device=device)
+        position_ids = torch.zeros(batch_size, 1, dtype=torch.long, device=device)
+        block_table = torch.zeros(
+            batch_size, max_pages, dtype=torch.int32, device=device
+        )
+        cache_seqlens = torch.zeros(batch_size, dtype=torch.int32, device=device)
+
+        meta = PagedMeta(
+            phase="decode",
+            page_size=pool.page_size,
+            block_table=block_table,
+            cache_seqlens=cache_seqlens,
+        )
 
         # First run outside the graph to allocate workspaces.
-        ctx = PagedAttnCtx(
-            kv_caches=pool.kv_caches,
-            page_size=pool.page_size,
-            page_indices=page_table,
-            lengths_after=lengths_after,
-            slot_mapping=slot_mapping,
-            cu_seqlens_q=cu_q,
-            is_decode=True,
-        )
         with torch.inference_mode():
-            logits, _ = engine.model(input_ids, position_ids, paged_ctx=ctx)
+            logits, _ = engine.model(
+                input_ids, position_ids,
+                kv_caches=pool.kv_caches, paged_meta=meta,
+            )
         torch.cuda.synchronize()
 
-        # Pre-allocate the output buffer that the graph will fill.
         logits_buf = torch.empty_like(logits)
 
         graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(graph):
-            with torch.inference_mode():
-                out_logits, _ = engine.model(input_ids, position_ids, paged_ctx=ctx)
-                logits_buf.copy_(out_logits)
+        with torch.cuda.graph(graph), torch.inference_mode():
+            out_logits, _ = engine.model(
+                input_ids, position_ids,
+                kv_caches=pool.kv_caches, paged_meta=meta,
+            )
+            logits_buf.copy_(out_logits)
 
         return _BucketGraph(
             batch_size=batch_size,
@@ -183,17 +183,15 @@ class CudaGraphRunner:
             graph=graph,
             input_ids=input_ids,
             position_ids=position_ids,
-            slot_mapping=slot_mapping,
-            page_table=page_table,
-            lengths_after=lengths_after,
-            cu_seqlens_q=cu_q,
+            block_table=block_table,
+            cache_seqlens=cache_seqlens,
             logits=logits_buf,
         )
 
     # ── Replay ──────────────────────────────────────────────────────────
 
     def try_replay(self, requests: list[Request]) -> list[int] | None:
-        """Replay a captured graph if the live batch fits one."""
+        """Replay a captured graph if the live batch fits a bucket."""
         if not self._captured or not requests:
             return None
         live = len(requests)
@@ -204,79 +202,62 @@ class CudaGraphRunner:
         if bg is None:
             return None
 
-        engine = self.engine
-        pool = engine.kv_pool
-        page_size = pool.page_size
-
-        # Fall back to eager if any request's page table exceeds the captured size.
+        # Fall back to eager if any request's page table exceeds the
+        # captured size.
         for req in requests:
-            meta = req.kv_cache
-            if meta is not None and len(meta.page_indices) > bg.max_pages:
+            if len(req.page_indices) > bg.max_pages:
                 return None
 
-        # Build inputs into the persistent buffers. Pad up to `bucket`
-        # by replicating the first request's tensors (their outputs go
-        # unused).
+        engine = self.engine
+        device = engine.device
+
+        # Build the live half of each input list, then pad up to bucket.
+        # Padded entries reuse row-0's tensors; their outputs are discarded.
         input_ids_list: list[int] = []
         position_ids_list: list[int] = []
-        slot_mapping_list: list[int] = []
-        lengths_after = []
-        page_indices_list: list[list[int]] = []
-
+        cache_seqlens_list: list[int] = []
+        page_lists: list[list[int]] = []
         for req in requests:
-            meta: PagedKVMeta = req.kv_cache  # type: ignore[assignment]
-            old_len = meta.length
-            new_len = old_len + 1
-            engine._allocate_pages_for(req, new_len)
-            meta.length = new_len
-            page_local = old_len // page_size
-            offset = old_len % page_size
-            slot = meta.page_indices[page_local] * page_size + offset
-            slot_mapping_list.append(slot)
             input_ids_list.append(req.output_ids[-1])
-            position_ids_list.append(old_len)
-            lengths_after.append(new_len)
-            page_indices_list.append(list(meta.page_indices))
+            position_ids_list.append(req.seq_len)
+            cache_seqlens_list.append(req.seq_len)
+            page_lists.append(req.page_indices)
 
-        # Pad to bucket size.
         pad = bucket - live
         if pad > 0:
             input_ids_list.extend([input_ids_list[0]] * pad)
             position_ids_list.extend([position_ids_list[0]] * pad)
-            slot_mapping_list.extend([slot_mapping_list[0]] * pad)
-            lengths_after.extend([lengths_after[0]] * pad)
-            page_indices_list.extend([page_indices_list[0]] * pad)
+            cache_seqlens_list.extend([cache_seqlens_list[0]] * pad)
+            page_lists.extend([page_lists[0]] * pad)
 
-        # Copy into persistent buffers.
+        # Copy into persistent buffers (no shape changes — graph stays valid).
         bg.input_ids.copy_(
-            torch.tensor([input_ids_list], dtype=torch.long, device=engine.device)
+            torch.tensor(input_ids_list, dtype=torch.long, device=device).unsqueeze(1)
         )
         bg.position_ids.copy_(
-            torch.tensor([position_ids_list], dtype=torch.long, device=engine.device)
+            torch.tensor(position_ids_list, dtype=torch.long, device=device).unsqueeze(1)
         )
-        bg.slot_mapping.copy_(
-            torch.tensor(slot_mapping_list, dtype=torch.long, device=engine.device)
+        bg.cache_seqlens.copy_(
+            torch.tensor(cache_seqlens_list, dtype=torch.int32, device=device)
         )
-        bg.lengths_after.copy_(
-            torch.tensor(lengths_after, dtype=torch.int32, device=engine.device)
-        )
-        # Page table — write only the prefix of each row, leave the
-        # rest at whatever the buffer holds (those entries are masked
-        # by lengths_after anyway).
-        bg.page_table.zero_()
-        for i, pt in enumerate(page_indices_list):
+        bg.block_table.zero_()
+        for i, pt in enumerate(page_lists):
             n = min(len(pt), bg.max_pages)
-            bg.page_table[i, :n] = torch.tensor(
-                pt[:n], dtype=torch.int32, device=engine.device
+            bg.block_table[i, :n] = torch.tensor(
+                pt[:n], dtype=torch.int32, device=device
             )
 
         bg.graph.replay()
 
-        # Sample only the live entries; padded ones are discarded.
+        # Bookkeeping: kernel just wrote at slot=cache_seqlens, advance.
+        for req in requests:
+            req.seq_len += 1
+
+        # Sample only the live entries (padded outputs are discarded).
         token_ids: list[int] = []
         for i, req in enumerate(requests):
             tok = sample_token(
-                bg.logits[:, i, :], req.sampling_params, req.output_ids
+                bg.logits[i : i + 1, -1, :], req.sampling_params, req.output_ids
             )
             token_ids.append(tok)
         return token_ids

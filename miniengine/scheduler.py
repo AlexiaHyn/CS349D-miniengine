@@ -184,73 +184,68 @@ class Scheduler:
         return finished
 
     def _step_paged(self) -> list[Request]:
-        """
-        Paged-mode step:
-          Phase 1 — admit (only if pool has pages) and packed-prefill in
-                    one forward pass.
-          Phase 2 — paged decode over all running requests.
+        """Paged-mode step.
+
+        Phase 1: admit any waiting requests the pool can fit. Each
+        admission reserves prompt_pages + 1 headroom (so the first
+        decode step doesn't have to allocate). Page allocation is done
+        HERE in the scheduler — the engine never touches the free list.
+
+        Phase 2: top up pages for each running request whose current
+        last page just filled, then run one batched paged decode.
         """
         finished: list[Request] = []
+        pool = self.engine.kv_pool
+        assert pool is not None
 
-        # ── Phase 1: admit (gated by pool capacity) ─────────────────────
+        def _admission_pages(req: Request) -> int:
+            return pool.pages_needed(req.num_input_tokens) + 1
+
+        # ── Phase 1: admit (gated by pool capacity) + packed prefill ───
         with self._lock:
             to_prefill: list[Request] = []
-            pool = self.engine.kv_pool
-            pages_reserved = 0  # cumulative pages committed to co-admitted requests
             while (
-                self.waiting and len(self.running) + len(to_prefill) < self.max_running
+                self.waiting
+                and len(self.running) + len(to_prefill) < self.max_running
             ):
-                head = self.waiting[0]
-                # Check cumulative page budget — can_admit only tests the
-                # single-request need against current free pages; here we
-                # also subtract pages already reserved for other candidates
-                # admitted in this same iteration.
-                if pool is not None:
-                    need = pool.pages_needed(head.num_input_tokens + 1)
-                    if pool.num_free < pages_reserved + need:
-                        break
-                    pages_reserved += need
+                pending = sum(_admission_pages(r) for r in to_prefill)
+                if pending + _admission_pages(self.waiting[0]) > pool.num_free:
+                    break
                 to_prefill.append(self.waiting.popleft())
 
         if to_prefill:
             for req in to_prefill:
                 req.status = RequestStatus.RUNNING
-            token_ids = self.engine.paged_prefill_packed(to_prefill)
-            for req, token_id in zip(to_prefill, token_ids):
-                req.output_ids.append(token_id)
-                self._stream_token(req, token_id)
-                if self._check_finished(req, token_id):
+                req.page_indices = pool.allocate(
+                    pool.pages_needed(req.num_input_tokens)
+                )
+                req.seq_len = 0  # paged_prefill_packed sets this on success
+
+            for req, tok in zip(
+                to_prefill, self.engine.paged_prefill_packed(to_prefill)
+            ):
+                req.output_ids.append(tok)
+                self._stream_token(req, tok)
+                if self._check_finished(req, tok):
                     self._finish_paged_request(req, finished)
                 else:
                     self.running.append(req)
 
         # ── Phase 2: paged decode ───────────────────────────────────────
-        # Preempt LIFO until the pool has at least one free page per running
-        # request (worst case: every request crosses a page boundary this step).
-        pool = self.engine.kv_pool
-        if pool is not None:
-            while self.running and pool.num_free < len(self.running):
-                victim = self.running.pop()
-                self.engine.free_request_pages(victim)
-                victim.output_ids.clear()
-                victim.status = RequestStatus.WAITING
-                with self._lock:
-                    self.waiting.appendleft(victim)
-                logger.warning(
-                    "Pool pressure: preempted request %s back to waiting "
-                    "(free=%d, running=%d)",
-                    victim.request_id,
-                    pool.num_free,
-                    len(self.running),
-                )
-
         if self.running:
+            # Top-up: a request that just filled its last page needs one
+            # more page before paged_decode runs (kernel writes at slot
+            # = seq_len, which is on the next page when seq_len % page_size == 0).
+            for req in self.running:
+                if pool.pages_needed(req.seq_len + 1) > len(req.page_indices):
+                    req.page_indices.extend(pool.allocate(1))
+
             token_ids = self.engine.paged_decode(self.running)
             still_running: list[Request] = []
-            for req, token_id in zip(self.running, token_ids):
-                req.output_ids.append(token_id)
-                self._stream_token(req, token_id)
-                if self._check_finished(req, token_id):
+            for req, tok in zip(self.running, token_ids):
+                req.output_ids.append(tok)
+                self._stream_token(req, tok)
+                if self._check_finished(req, tok):
                     self._finish_paged_request(req, finished)
                 else:
                     still_running.append(req)

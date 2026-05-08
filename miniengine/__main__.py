@@ -55,8 +55,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--page-size",
         type=int,
-        default=32,
-        help="Tokens per KV page (paged mode only).",
+        default=256,
+        help="Tokens per KV page (paged mode only). Must be a multiple "
+        "of 256 — flash-attn 2.x's paged-kv kernel constraint. "
+        "Reasonable values to sweep are 256 vs 512.",
     )
     p.add_argument(
         "--mem-fraction-static",
