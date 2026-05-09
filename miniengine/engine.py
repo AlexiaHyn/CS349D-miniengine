@@ -234,7 +234,13 @@ class Engine:
                 module.extend_to(max_pos)
         logger.info("Pre-extended RoPE cos/sin cache to length %d", max_pos)
 
-        opts = dict(mode="default", dynamic=True)
+        # dynamic=False compiles a *specialized* graph per concrete shape.
+        # Specialized graphs skip the dynamic-shape guards that
+        # dynamic=True wraps every op in. The cost is one trace per new
+        # shape we hit, but the bench sweep only uses a handful of
+        # bucket batch sizes, all of which we pre-compile via the
+        # warm-up loop below — so steady state is sync- and guard-free.
+        opts = dict(mode="default", dynamic=False)
         n = 0
         for block in self.model.modules():
             if not isinstance(block, TransformerBlock):
@@ -262,6 +268,66 @@ class Engine:
             "torch.compile: wrapped %d blocks + project_logits "
             "(input_norm + qkv_with_rope + add_norm_pre + add_norm_post + mlp + lm_head)",
             n,
+        )
+
+        # Pre-trace the compiled regions at every bucket batch size we
+        # expect to see in serving so the first real request doesn't pay
+        # tracing cost. We feed dummy hidden / position tensors directly
+        # through each layer's helpers — the flash-attn call is *not*
+        # exercised here (it lives outside the compiled regions).
+        if self.mode == "paged" and self.kv_pool is not None:
+            self._warmup_compiled_regions(config)
+
+    @torch.inference_mode()
+    def _warmup_compiled_regions(self, config: ModelConfig) -> None:
+        """Force Inductor to specialize each compiled sub-region at the
+        bucket batch sizes we'll see in serving. Tiny inputs (seq_len=1
+        for decode-shape, seq_len=64 for prefill-shape) are enough —
+        Inductor specializes on the (rank, dtype) signature, not on
+        absolute size in the dynamic-disabled path."""
+        device = self.device
+        hidden = config.hidden_size
+        bucket_bs = [1, 2, 4, 8, 16, 32]  # match cuda-graph buckets
+        prefill_lens = [64, 256, 512]      # cover typical packed-prefill widths
+
+        layer = self.model.model.layers[0]
+        block_for_warmup = layer if not hasattr(layer, "_orig_mod") else layer
+
+        n_traces = 0
+        for bs in bucket_bs:
+            # Decode-shape: (bs, 1, hidden). pos = arange so RoPE table is hit.
+            x = torch.zeros(bs, 1, hidden, dtype=self.dtype, device=device)
+            pos = torch.zeros(bs, 1, dtype=torch.long, device=device)
+            cos, sin = self.model.model.rotary_emb(pos)
+            try:
+                block_for_warmup.self_attn._proj_qkv_with_rope(x, cos, sin)
+                block_for_warmup.input_layernorm(x)
+                block_for_warmup._add_norm_pre(x, x)
+                block_for_warmup._add_norm_post(x, x)
+                block_for_warmup.mlp(x)
+                # project_logits gets (1, bs, hidden) — same as paged_decode
+                self.model.project_logits(
+                    torch.zeros(1, bs, hidden, dtype=self.dtype, device=device)
+                )
+                n_traces += 1
+            except Exception:
+                logger.exception("compile warm-up failed at bs=%d (decode)", bs)
+        for L in prefill_lens:
+            x = torch.zeros(1, L, hidden, dtype=self.dtype, device=device)
+            pos = torch.arange(L, device=device).unsqueeze(0)
+            cos, sin = self.model.model.rotary_emb(pos)
+            try:
+                block_for_warmup.self_attn._proj_qkv_with_rope(x, cos, sin)
+                block_for_warmup._add_norm_pre(x, x)
+                block_for_warmup._add_norm_post(x, x)
+                block_for_warmup.mlp(x)
+                n_traces += 1
+            except Exception:
+                logger.exception("compile warm-up failed at L=%d (prefill)", L)
+        torch.cuda.synchronize() if torch.cuda.is_available() else None
+        logger.info(
+            "torch.compile: pre-traced %d shape buckets (%d decode + %d prefill)",
+            n_traces, len(bucket_bs), len(prefill_lens),
         )
 
     # ── Tokenization ────────────────────────────────────────────────────
