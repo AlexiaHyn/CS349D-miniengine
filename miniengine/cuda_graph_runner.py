@@ -96,9 +96,16 @@ class CudaGraphRunner:
             max_decode_pos, self.max_pages, page_size,
         )
 
-        # Warm up dynamo / kernels so first capture doesn't include init.
-        for _ in range(3):
-            self._dummy_forward(self.bucket_batch_sizes[0])
+        # Warm up dynamo / kernels at EVERY bucket batch size before
+        # capture, not just the first. Otherwise dynamo's first-time
+        # trace for buckets 2+ runs *during* capture and ends up baked
+        # into the recorded graph, leaving compile uplift on the table.
+        # Spec: "compile, run a few warmup forwards so dynamo settles,
+        # then capture."
+        for bs in self.bucket_batch_sizes:
+            for _ in range(2):
+                self._dummy_forward(bs)
+        torch.cuda.synchronize()
 
         for bs in self.bucket_batch_sizes:
             self._graphs[bs] = self._capture_one(bs)
