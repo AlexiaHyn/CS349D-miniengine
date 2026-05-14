@@ -1,17 +1,33 @@
 """
-Serving benchmark — throughput & latency under varying concurrency.
+Serving benchmark — throughput & latency under varying concurrency or
+arrival rate.
 
-Sends streaming requests to a running MiniEngine server, sweeping
-concurrency from 1 to 32 (configurable).  Prompts are sampled from
-WildChat and truncated / padded to the target input length.
+Sends streaming requests to a running MiniEngine server.  Two load patterns:
+
+  closed-loop (default): a fixed-size worker pool drains a request queue.
+    Use ``--concurrencies 1,2,4,8,16,32`` to sweep pool sizes.
+
+  open-loop (``--request-rate <r>`` finite): requests arrive on a
+    Poisson schedule of mean ``1/r`` seconds, regardless of server
+    speed — the standard load-test pattern.  Concurrency in flight is
+    determined by the server, not by us.
+
+Prompts are sampled from WildChat and truncated / padded to the target
+input length.
 
 Usage:
     # Start the server first, then:
     python -m benchmark.bench_serving
-    python -m benchmark.bench_serving --input-len 512 --output-len 256 --randomness 0.5
+    python -m benchmark.bench_serving --input-len 512 --output-len 256
     python -m benchmark.bench_serving --concurrencies 1,2,4,8,16,32
 
-Reports per concurrency level:
+    # Open-loop: 8 req/s Poisson arrivals, single rate
+    python -m benchmark.bench_serving --request-rate 8 --num-requests 200
+
+    # Open-loop sweep
+    python -m benchmark.bench_serving --request-rates 1,2,4,8 --num-requests 200
+
+Reports per load level:
     - TTFT          p50 / p99  (time to first token)
     - Completion    p50 / p99  (end-to-end request latency)
     - Generation throughput    (output tokens / s)
@@ -255,7 +271,7 @@ async def run_at_concurrency(
     requests: list[dict],
     concurrency: int,
 ) -> list[RequestMetrics]:
-    """Run all requests with fixed concurrency using a worker pool."""
+    """Closed-loop: fixed-size worker pool drains a request queue."""
     results: list[RequestMetrics] = []
     queue: asyncio.Queue = asyncio.Queue()
     for r in requests:
@@ -293,6 +309,55 @@ async def run_at_concurrency(
     return results
 
 
+async def run_at_request_rate(
+    base_url: str,
+    requests: list[dict],
+    request_rate: float,
+) -> list[RequestMetrics]:
+    """Open-loop: requests arrive on a Poisson schedule (mean 1/rate s).
+
+    No bounded worker pool — concurrency in flight is whatever the server
+    can absorb.  This is the load pattern users actually generate (think
+    of an external traffic source); it surfaces queueing latency and
+    overload behaviour that closed-loop benchmarks hide.
+    """
+    if request_rate <= 0:
+        raise ValueError(f"request_rate must be positive, got {request_rate}")
+
+    results: list[RequestMetrics] = []
+    total = len(requests)
+    t_start = time.perf_counter()
+
+    async def fire(session, req):
+        m = await send_request(session, base_url, req)
+        results.append(m)
+        done = len(results)
+        elapsed = time.perf_counter() - t_start
+        tag = "ERR" if m.error else "ok"
+        print(
+            f"    [{done:>3}/{total}] {tag} "
+            f"in={m.input_len} out={m.num_output_tokens} "
+            f"ttft={(m.ttft or 0)*1000:.0f}ms "
+            f"compl={(m.completion_latency or 0)*1000:.0f}ms "
+            f"(elapsed {elapsed:.1f}s)",
+            flush=True,
+        )
+
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=600),
+    ) as session:
+        tasks: list[asyncio.Task] = []
+        for req in requests:
+            tasks.append(asyncio.create_task(fire(session, req)))
+            # Exponential inter-arrival time → Poisson process with rate r.
+            # First request fires at t≈0 (sleep happens AFTER submitting),
+            # which matches the standard "arrival epoch" convention.
+            await asyncio.sleep(np.random.exponential(1.0 / request_rate))
+        await asyncio.gather(*tasks)
+
+    return results
+
+
 # ── Reporting ───────────────────────────────────────────────────────────
 
 
@@ -304,10 +369,12 @@ def mean_ms(arr):
     return np.mean(arr) * 1000 if len(arr) > 0 else float("nan")
 
 
-def print_single_result(conc, ok, total_time, ttfts, completions, tpots, total_out):
+def print_single_result(
+    label, ok, total_time, ttfts, completions, tpots, total_out
+):
     gen_tps = total_out / total_time if total_time > 0 else 0
     print(
-        f"  conc={conc:<3}  "
+        f"  {label:<10}  "
         f"TTFT p50={pct(ttfts,50):>7.0f}ms  p99={pct(ttfts,99):>7.0f}ms  "
         f"Compl p50={pct(completions,50):>7.0f}ms  p99={pct(completions,99):>7.0f}ms  "
         f"GenTok/s={gen_tps:>7.0f}  "
@@ -316,16 +383,18 @@ def print_single_result(conc, ok, total_time, ttfts, completions, tpots, total_o
     )
 
 
-def print_summary_table(all_results: dict[int, list[RequestMetrics]]):
+def print_summary_table(all_results: dict, level_label: str = "Conc"):
+    """Render a summary table.  ``all_results`` keys may be concurrency
+    ints (closed-loop) or request-rate floats (open-loop)."""
     print(f"\n{'=' * 100}")
     print(
-        f"{'Conc':>5}  {'TTFT_p50':>9}  {'TTFT_p99':>9}  "
+        f"{level_label:>6}  {'TTFT_p50':>9}  {'TTFT_p99':>9}  "
         f"{'Compl_p50':>9}  {'Compl_p99':>9}  "
         f"{'TPOT_p50':>9}  {'TPOT_p99':>9}  "
         f"{'GenTok/s':>9}  {'OK':>4}"
     )
     print(
-        " " * 7
+        " " * 8
         + "(ms)"
         + " " * 7
         + "(ms)"
@@ -340,11 +409,12 @@ def print_summary_table(all_results: dict[int, list[RequestMetrics]]):
     )
     print(f"{'-' * 100}")
 
-    for conc in sorted(all_results.keys()):
-        results = all_results[conc]
+    for level in sorted(all_results.keys()):
+        results = all_results[level]
         ok = [r for r in results if r.error is None]
+        level_str = f"{level:g}" if isinstance(level, float) else f"{level}"
         if not ok:
-            print(f"{conc:>5}  ALL FAILED")
+            print(f"{level_str:>6}  ALL FAILED")
             continue
 
         ttfts = np.array([r.ttft for r in ok if r.ttft is not None])
@@ -357,7 +427,7 @@ def print_summary_table(all_results: dict[int, list[RequestMetrics]]):
         gen_tps = total_out / total_time if total_time > 0 else 0
 
         print(
-            f"{conc:>5}  "
+            f"{level_str:>6}  "
             f"{pct(ttfts,50):>9.0f}  {pct(ttfts,99):>9.0f}  "
             f"{pct(completions,50):>9.0f}  {pct(completions,99):>9.0f}  "
             f"{pct(tpots,50):>9.1f}  {pct(tpots,99):>9.1f}  "
@@ -370,20 +440,43 @@ def print_summary_table(all_results: dict[int, list[RequestMetrics]]):
 # ── Main ────────────────────────────────────────────────────────────────
 
 
-async def async_main(args, requests_pool, concurrencies):
+async def async_main(args, requests_pool, levels, *, mode: str):
+    """Drive the benchmark in either closed-loop or open-loop mode.
+
+    mode="concurrency" — ``levels`` are int worker-pool sizes
+    mode="rate"        — ``levels`` are float request rates (req/s)
+    """
     base_url = args.base_url
-    all_results: dict[int, list[RequestMetrics]] = {}
+    all_results: dict = {}
 
-    for conc in concurrencies:
-        n = args.num_requests if args.num_requests is not None else max(conc * 2, 8)
-        reqs = requests_pool[:n]
-        print(f"\n  Running concurrency={conc} ({len(reqs)} requests)...", flush=True)
-
-        t0 = time.perf_counter()
-        results = await run_at_concurrency(base_url, reqs, conc)
+    for level in levels:
+        if mode == "concurrency":
+            n = (
+                args.num_requests
+                if args.num_requests is not None
+                else max(level * 2, 8)
+            )
+            reqs = requests_pool[:n]
+            print(
+                f"\n  Running concurrency={level} ({len(reqs)} requests, "
+                "closed-loop)...",
+                flush=True,
+            )
+            t0 = time.perf_counter()
+            results = await run_at_concurrency(base_url, reqs, level)
+        else:  # mode == "rate"
+            n = args.num_requests if args.num_requests is not None else 200
+            reqs = requests_pool[:n]
+            print(
+                f"\n  Running request_rate={level} req/s ({len(reqs)} requests, "
+                "Poisson open-loop)...",
+                flush=True,
+            )
+            t0 = time.perf_counter()
+            results = await run_at_request_rate(base_url, reqs, level)
         total_time = time.perf_counter() - t0
 
-        all_results[conc] = results
+        all_results[level] = results
 
         ok = [r for r in results if r.error is None]
         ttfts = np.array([r.ttft for r in ok if r.ttft is not None])
@@ -393,11 +486,14 @@ async def async_main(args, requests_pool, concurrencies):
         tpots = np.array([r.tpot for r in ok if r.tpot is not None])
         total_out = sum(r.num_output_tokens for r in ok)
 
+        label = f"{level:g}/s" if mode == "rate" else f"conc={level}"
         print_single_result(
-            conc, len(ok), total_time, ttfts, completions, tpots, total_out
+            label, len(ok), total_time, ttfts, completions, tpots, total_out
         )
 
-    print_summary_table(all_results)
+    print_summary_table(
+        all_results, level_label="Rate" if mode == "rate" else "Conc"
+    )
 
 
 def main():
@@ -431,18 +527,52 @@ def main():
         "--concurrencies",
         type=str,
         default="1,2,4,8,16,32",
-        help="Comma-separated concurrency levels to sweep",
+        help="Closed-loop: comma-separated worker-pool sizes to sweep. "
+        "Ignored when --request-rate(s) is set.",
+    )
+    p.add_argument(
+        "--request-rate",
+        type=float,
+        default=None,
+        help="Open-loop: arrival rate in req/s with Poisson inter-arrivals. "
+        "When set, concurrency is unbounded and --concurrencies is ignored. "
+        "Use --request-rates for a sweep.",
+    )
+    p.add_argument(
+        "--request-rates",
+        type=str,
+        default=None,
+        help="Open-loop sweep: comma-separated arrival rates in req/s.  "
+        "Mutually exclusive with --request-rate.",
     )
     p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
 
+    if args.request_rate is not None and args.request_rates is not None:
+        p.error("--request-rate and --request-rates are mutually exclusive")
+
     random.seed(args.seed)
-    concurrencies = [int(x) for x in args.concurrencies.split(",")]
-    pool_size = (
-        args.num_requests
-        if args.num_requests is not None
-        else max(max(concurrencies) * 2, 8)
-    )
+    np.random.seed(args.seed)
+
+    if args.request_rates is not None:
+        rates = [float(x) for x in args.request_rates.split(",")]
+        mode = "rate"
+        levels: list = rates
+    elif args.request_rate is not None:
+        mode = "rate"
+        levels = [args.request_rate]
+    else:
+        mode = "concurrency"
+        levels = [int(x) for x in args.concurrencies.split(",")]
+
+    if mode == "rate":
+        pool_size = args.num_requests if args.num_requests is not None else 200
+    else:
+        pool_size = (
+            args.num_requests
+            if args.num_requests is not None
+            else max(max(levels) * 2, 8)
+        )
 
     # Auto-detect model from server
     model_id = args.model
@@ -464,14 +594,20 @@ def main():
     print(f"  Serving Benchmark")
     print(f"  Server       : {args.base_url}")
     print(f"  Model        : {model_id}")
+    print(f"  Load mode    : {'open-loop (Poisson)' if mode == 'rate' else 'closed-loop'}")
     if args.num_requests is not None:
-        print(f"  Requests     : {args.num_requests} (per concurrency)")
+        print(f"  Requests     : {args.num_requests} per level")
+    elif mode == "rate":
+        print(f"  Requests     : 200 per rate")
     else:
         print(f"  Requests     : max(conc*2, 8) per concurrency")
     print(f"  Input len    : {args.input_len}")
     print(f"  Output len   : {args.output_len}")
     print(f"  Randomness   : {args.randomness}")
-    print(f"  Concurrencies: {concurrencies}")
+    if mode == "rate":
+        print(f"  Request rates: {levels} req/s")
+    else:
+        print(f"  Concurrencies: {levels}")
     print(f"{'=' * 60}")
 
     # Load tokenizer
@@ -502,7 +638,7 @@ def main():
     )
     del tokenizer
 
-    asyncio.run(async_main(args, requests_pool, concurrencies))
+    asyncio.run(async_main(args, requests_pool, levels, mode=mode))
 
 
 if __name__ == "__main__":
