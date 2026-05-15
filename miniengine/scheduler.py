@@ -43,7 +43,7 @@ class Scheduler:
         stop()             — gracefully shut down
     """
 
-    def __init__(self, engine: Engine, max_running: int = 16, mode: str = "batched"):
+    def __init__(self, engine: Engine, max_running: int = 16, mode: str = "paged"):
         self.engine = engine
         self.max_running = max_running
         self.mode = mode
@@ -111,6 +111,8 @@ class Scheduler:
         """
         if self.mode == "baseline":
             return self._step_baseline()
+        if self.mode == "paged":
+            return self._step_paged()
         return self._step_batched()
 
     def _step_baseline(self) -> list[Request]:
@@ -177,6 +179,60 @@ class Scheduler:
 
         return finished
 
+    def _step_paged(self) -> list[Request]:
+        """
+        Paged-mode step — same shape as ``_step_batched`` but:
+
+          - admission is gated by KV-pool page availability,
+          - prefill is varlen-batched (one packed forward for all admissions),
+          - decode is paged + flash_attn (with optional CUDA graph),
+          - finishing a request frees its KV pages via
+            ``engine.free_paged_state``.
+        """
+        finished: list[Request] = []
+        pool = self.engine.pool
+        assert pool is not None, "scheduler in paged mode but engine has no KV pool"
+
+        # ── Phase 1: admit + batched paged prefill ──────────────────────
+        with self._lock:
+            to_prefill: list[Request] = []
+            while (
+                self.waiting
+                and len(self.running) + len(to_prefill) < self.max_running
+            ):
+                req = self.waiting[0]
+                if pool.num_free < pool.pages_needed(len(req.input_ids)):
+                    break  # can't fit; wait for pages to free
+                to_prefill.append(self.waiting.popleft())
+
+        if to_prefill:
+            for req in to_prefill:
+                req.status = RequestStatus.RUNNING
+            for req, token_id in zip(
+                to_prefill, self.engine.paged_batched_prefill(to_prefill)
+            ):
+                req.output_ids.append(token_id)
+                self._stream_token(req, token_id)
+                if self._check_finished(req, token_id):
+                    self._finish_request(req, finished)
+                else:
+                    self.running.append(req)
+
+        # ── Phase 2: paged batched decode ───────────────────────────────
+        if self.running:
+            token_ids = self.engine.paged_batched_decode(self.running)
+            still_running: list[Request] = []
+            for req, token_id in zip(self.running, token_ids):
+                req.output_ids.append(token_id)
+                self._stream_token(req, token_id)
+                if self._check_finished(req, token_id):
+                    self._finish_request(req, finished)
+                else:
+                    still_running.append(req)
+            self.running = still_running
+
+        return finished
+
     # ── Helpers ─────────────────────────────────────────────────────────
 
     def _check_finished(self, req: Request, token_id: int) -> bool:
@@ -197,7 +253,9 @@ class Scheduler:
     def _finish_request(self, req: Request, finished_list: list[Request]) -> None:
         """Mark a request as finished and free its resources."""
         req.status = RequestStatus.FINISHED
-        req.kv_cache = None  # release GPU memory
+        req.kv_cache = None  # release GPU memory (baseline / batched modes)
+        if self.mode == "paged":
+            self.engine.free_paged_state(req)
         req.token_queue.put(TokenOutput(token_id=-1, token_text="", finished=True))
         finished_list.append(req)
 
