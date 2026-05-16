@@ -65,6 +65,32 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/cache_stats")
+async def cache_stats():
+    """Snapshot of radix-cache effectiveness counters.
+
+    Returns ``{"enabled": False}`` if the engine doesn't have a radix
+    cache wired up yet — students see this until they implement Part B.
+    """
+    cache = getattr(engine, "radix_cache", None) if engine else None
+    if cache is None:
+        return {"enabled": False}
+    m = cache.metrics
+    pool = engine.pool
+    return {
+        "enabled": True,
+        "hit_rate": m.hit_rate,
+        "total_lookups": m.total_lookups,
+        "total_query_tokens": m.total_query_tokens,
+        "total_hit_tokens": m.total_hit_tokens,
+        "total_inserted_pages": m.total_inserted_pages,
+        "total_evicted_pages": m.total_evicted_pages,
+        "num_cached_pages": getattr(cache, "num_cached_pages", 0),
+        "pool_num_free": pool.num_free if pool is not None else 0,
+        "pool_num_evictable": getattr(pool, "num_evictable", 0),
+    }
+
+
 @app.get("/v1/models")
 async def list_models():
     return {
@@ -111,21 +137,31 @@ async def chat_completions(raw: ChatCompletionRequest):
         )
 
     # Non-streaming: collect full response
-    full_text = await _collect_full_response(req)
-    return _make_completion_response(req.request_id, raw.model or model_id, full_text)
+    full_text, usage = await _collect_full_response(req)
+    return _make_completion_response(
+        req.request_id, raw.model or model_id, full_text, usage
+    )
 
 
 # ── Streaming helpers ───────────────────────────────────────────────────
 
 
 async def _stream_response(req: Request, model: str) -> AsyncGenerator[str, None]:
-    """Yield SSE chunks as tokens arrive from the scheduler."""
+    """Yield SSE chunks as tokens arrive from the scheduler.
+
+    The final chunk includes ``usage`` with prefix-cache hit information
+    so clients can record cache effectiveness per request.
+    """
     loop = asyncio.get_event_loop()
     while True:
         output: TokenOutput = await loop.run_in_executor(None, req.token_queue.get)
         if output.finished:
             chunk = _make_stream_chunk(
-                req.request_id, model, content="", finish_reason="stop"
+                req.request_id,
+                model,
+                content="",
+                finish_reason="stop",
+                usage=_usage_from_request(req),
             )
             yield f"data: {json.dumps(chunk)}\n\n"
             yield "data: [DONE]\n\n"
@@ -134,16 +170,31 @@ async def _stream_response(req: Request, model: str) -> AsyncGenerator[str, None
         yield f"data: {json.dumps(chunk)}\n\n"
 
 
-async def _collect_full_response(req: Request) -> str:
-    """Block until the request finishes and return the full text."""
+async def _collect_full_response(req: Request) -> tuple[str, dict]:
+    """Block until the request finishes; return (text, usage dict)."""
     loop = asyncio.get_event_loop()
     parts: list[str] = []
     while True:
         output: TokenOutput = await loop.run_in_executor(None, req.token_queue.get)
         if output.finished:
-            break
+            return "".join(parts), _usage_from_request(req)
         parts.append(output.token_text)
-    return "".join(parts)
+
+
+def _usage_from_request(req: Request) -> dict:
+    """Build the OpenAI-style ``usage`` block straight off the request.
+
+    ``cache_hit_tokens`` is our extension — number of prompt tokens
+    served from the radix prefix cache (page-aligned).
+    """
+    p = req.num_input_tokens
+    c = req.num_output_tokens
+    return {
+        "prompt_tokens": p,
+        "completion_tokens": c,
+        "total_tokens": p + c,
+        "cache_hit_tokens": req.cache_hit_tokens,
+    }
 
 
 # ── Response builders ───────────────────────────────────────────────────
@@ -154,8 +205,9 @@ def _make_stream_chunk(
     model: str,
     content: str,
     finish_reason: str | None = None,
+    usage: dict | None = None,
 ) -> dict:
-    return {
+    chunk: dict = {
         "id": f"chatcmpl-{request_id}",
         "object": "chat.completion.chunk",
         "created": int(time.time()),
@@ -168,9 +220,14 @@ def _make_stream_chunk(
             }
         ],
     }
+    if usage is not None:
+        chunk["usage"] = usage
+    return chunk
 
 
-def _make_completion_response(request_id: str, model: str, text: str) -> dict:
+def _make_completion_response(
+    request_id: str, model: str, text: str, usage: dict | None = None
+) -> dict:
     return {
         "id": f"chatcmpl-{request_id}",
         "object": "chat.completion",
@@ -183,9 +240,11 @@ def _make_completion_response(request_id: str, model: str, text: str) -> dict:
                 "finish_reason": "stop",
             }
         ],
-        "usage": {
+        "usage": usage
+        or {
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
+            "cache_hit_tokens": 0,
         },
     }

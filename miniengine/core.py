@@ -60,6 +60,13 @@ class Request:
     # Streaming output channel — scheduler pushes, server consumes
     token_queue: queue.Queue = field(default_factory=queue.Queue)
 
+    # ── Milestone 3 perf counters (set by scheduler; read by server) ───
+    # Number of prompt tokens served from the radix prefix cache.  Stays
+    # 0 when the cache is disabled or the lookup missed.  Surfaced in
+    # the response's ``usage`` block so clients can record per-request
+    # cache effectiveness.
+    cache_hit_tokens: int = 0
+
     # ── Derived properties ─────────────────────────────────────────────
 
     @property
