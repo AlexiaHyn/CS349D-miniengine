@@ -215,9 +215,16 @@ class RadixCache:
             block = tuple(tokens[start : start + ps])
             existing = node.children.get(block)
             if existing is not None:
-                # This page is already cached at this prefix; the
-                # caller's page is a duplicate, return it to the pool.
-                redundant.append(pages[i])
+                # Same prefix already cached.  Two sub-cases:
+                #   (a) caller is re-inserting a page they *borrowed*
+                #       from the cache at admission time (same page id).
+                #       The cache still owns this page; do NOT report
+                #       it as redundant or the caller will free a page
+                #       the cache is currently holding (double-free).
+                #   (b) caller computed a fresh duplicate page (different
+                #       page id, same contents).  Free the duplicate.
+                if existing.pages and existing.pages[0] != pages[i]:
+                    redundant.append(pages[i])
                 existing.last_access = time.monotonic()
                 node = existing
                 continue
