@@ -139,6 +139,23 @@ def parse_args() -> argparse.Namespace:
         default=32,
         help="paged: max KV pages per sequence the captured graph supports",
     )
+
+    # ── Milestone-3 flags ──────────────────────────────────────────────
+    p.add_argument(
+        "--prefill-chunk-size",
+        type=int,
+        default=0,
+        help="paged: per-step prefill token budget across all admitted "
+        "requests in the same batch. 0 disables chunking (milestone-2 "
+        "single-shot path).",
+    )
+    p.add_argument(
+        "--disable-radix-cache",
+        action="store_true",
+        help="paged: disable the radix prefix cache (on by default). "
+        "Useful for measuring the cache's contribution on workloads "
+        "with shared prompt prefixes (RAG, multi-turn chat).",
+    )
     return p.parse_args()
 
 
@@ -182,6 +199,8 @@ def main() -> None:
         cuda_graph_max_pages=args.cuda_graph_max_pages,
         attention_backend=args.attention_backend,
         flashinfer_workspace_mb=args.flashinfer_workspace_mb,
+        prefill_chunk_size=args.prefill_chunk_size,
+        disable_radix_cache=args.disable_radix_cache,
     )
     sched = Scheduler(engine=engine, max_running=args.max_running, mode=args.mode)
 

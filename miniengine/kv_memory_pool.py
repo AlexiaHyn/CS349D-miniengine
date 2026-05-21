@@ -89,6 +89,10 @@ class KVMemoryPool:
         # Free list: every page except the reserved scratch page.
         self._free: list[int] = list(range(1, num_pages))
 
+        # Milestone-3 Part B: optional radix cache the pool consults
+        # when the free list is short.  Set via ``attach_cache``.
+        self._cache = None  # type: ignore[var-annotated]
+
         elem = torch.tensor([], dtype=dtype).element_size()
         bytes_total = (
             2 * num_layers * num_pages * page_size * num_kv_heads * head_dim * elem
@@ -103,15 +107,30 @@ class KVMemoryPool:
 
     # ── Allocation API ─────────────────────────────────────────────────
 
+    def attach_cache(self, cache) -> None:
+        """Wire a ``RadixCache`` so ``allocate`` can evict cached pages.
+
+        Setting to ``None`` disables eviction-on-allocate.
+        """
+        self._cache = cache
+
     def allocate(self, num_pages: int) -> list[int]:
         """Reserve ``num_pages`` pages and return their indices.
 
-        Raises ``RuntimeError`` if the pool cannot satisfy the request.
+        If the free list is short, asks the attached ``RadixCache``
+        (if any) to evict unlocked pages first.  Raises
+        ``RuntimeError`` only when even after eviction we can't satisfy
+        the request.
         """
         if num_pages < 0:
             raise ValueError(f"num_pages must be non-negative, got {num_pages}")
         if num_pages == 0:
             return []
+        if len(self._free) < num_pages:
+            # Ask the cache to drop LRU pages back to us.
+            if self._cache is not None:
+                deficit = num_pages - len(self._free)
+                self._cache.evict(deficit)
         if len(self._free) < num_pages:
             raise RuntimeError(
                 f"KV pool exhausted: requested {num_pages}, "
@@ -139,6 +158,13 @@ class KVMemoryPool:
     def num_free(self) -> int:
         """Pages currently available for allocation (excludes scratch)."""
         return len(self._free)
+
+    @property
+    def num_evictable(self) -> int:
+        """Pages the attached cache could evict on demand (0 if none)."""
+        if self._cache is None:
+            return 0
+        return self._cache.num_evictable_pages()
 
     @property
     def kv_caches(self) -> list[tuple[torch.Tensor, torch.Tensor]]:
