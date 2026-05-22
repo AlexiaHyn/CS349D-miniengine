@@ -1,0 +1,186 @@
+  Auto-detected model: Qwen/Qwen3-8B
+
+============================================================
+  Serving Benchmark
+  Server       : http://localhost:8000
+  Model        : Qwen/Qwen3-8B
+  Requests     : max(conc*2, 8) per concurrency
+  Input len    : 512
+  Output len   : 256
+  Randomness   : 0.5
+  Concurrencies: [1, 2, 4, 8, 16, 32]
+============================================================
+
+  Loading tokenizer...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  Loading WildChat prompts...
+  Loaded 320 candidate prompts
+  Preparing 64 requests...
+  Input lengths:  min=261, max=513, mean=381
+  Output lengths: min=128, max=245, mean=187
+
+  Running concurrency=1 (8 requests)...
+    [  1/8] ok in=380 out=231 ttft=139ms compl=14319ms (elapsed 14.3s)
+    [  2/8] ok in=324 out=191 ttft=141ms compl=11816ms (elapsed 26.1s)
+    [  3/8] ok in=282 out=148 ttft=139ms compl=9162ms (elapsed 35.3s)
+    [  4/8] ok in=470 out=208 ttft=186ms compl=12964ms (elapsed 48.3s)
+    [  5/8] ok in=396 out=180 ttft=177ms compl=11211ms (elapsed 59.5s)
+    [  6/8] ok in=416 out=189 ttft=180ms compl=11764ms (elapsed 71.2s)
+    [  7/8] ok in=397 out=229 ttft=175ms compl=14208ms (elapsed 85.4s)
+    [  8/8] ok in=330 out=204 ttft=144ms compl=12616ms (elapsed 98.1s)
+  conc=1    TTFT p50=    159ms  p99=    186ms  Compl p50=  12216ms  p99=  14311ms  GenTok/s=     16  ok=8
+
+  Running concurrency=2 (8 requests)...
+    [  1/8] ok in=324 out=191 ttft=142ms compl=12682ms (elapsed 12.7s)
+    [  2/8] ok in=380 out=231 ttft=351ms compl=15494ms (elapsed 15.5s)
+    [  3/8] ok in=282 out=148 ttft=197ms compl=9983ms (elapsed 22.7s)
+    [  4/8] ok in=470 out=208 ttft=242ms compl=13954ms (elapsed 29.4s)
+    [  5/8] ok in=396 out=180 ttft=234ms compl=12122ms (elapsed 34.8s)
+    [  6/8] ok in=416 out=189 ttft=238ms compl=12708ms (elapsed 42.2s)
+    [  7/8] ok in=397 out=229 ttft=234ms compl=15314ms (elapsed 50.1s)
+    [  8/8] ok in=330 out=204 ttft=207ms compl=13188ms (elapsed 55.3s)
+  conc=2    TTFT p50=    234ms  p99=    343ms  Compl p50=  12948ms  p99=  15482ms  GenTok/s=     29  ok=8
+
+  Running concurrency=4 (8 requests)...
+    [  1/8] ok in=282 out=148 ttft=216ms compl=10267ms (elapsed 10.3s)
+    [  2/8] ok in=380 out=170 ttft=535ms compl=12048ms (elapsed 12.0s)
+    [  3/8] ok in=324 out=191 ttft=217ms compl=13495ms (elapsed 13.5s)
+    [  4/8] ok in=470 out=208 ttft=534ms compl=14874ms (elapsed 14.9s)
+    [  5/8] ok in=396 out=180 ttft=242ms compl=12701ms (elapsed 23.0s)
+    [  6/8] ok in=416 out=189 ttft=242ms compl=13110ms (elapsed 25.2s)
+    [  7/8] ok in=330 out=204 ttft=212ms compl=13690ms (elapsed 28.6s)
+    [  8/8] ok in=397 out=229 ttft=240ms compl=15503ms (elapsed 29.0s)
+  conc=4    TTFT p50=    241ms  p99=    534ms  Compl p50=  13302ms  p99=  15459ms  GenTok/s=     52  ok=8
+
+  Running concurrency=8 (16 requests)...
+    [  1/16] ok in=282 out=148 ttft=963ms compl=11188ms (elapsed 11.2s)
+    [  2/16] ok in=396 out=180 ttft=249ms compl=13540ms (elapsed 13.5s)
+    [  3/16] ok in=492 out=39 ttft=247ms compl=3123ms (elapsed 14.3s)
+    [  4/16] ok in=416 out=189 ttft=964ms compl=14381ms (elapsed 14.4s)
+    [  5/16] ok in=324 out=191 ttft=249ms compl=14628ms (elapsed 14.6s)
+    [  6/16] ok in=330 out=204 ttft=963ms compl=15919ms (elapsed 15.9s)
+    [  7/16] ok in=470 out=208 ttft=964ms compl=16379ms (elapsed 16.4s)
+    [  8/16] ok in=397 out=229 ttft=963ms compl=17986ms (elapsed 18.0s)
+    [  9/16] ok in=380 out=231 ttft=964ms compl=18303ms (elapsed 18.3s)
+    [ 10/16] ok in=299 out=130 ttft=209ms compl=10161ms (elapsed 23.7s)
+    [ 11/16] ok in=440 out=112 ttft=247ms compl=8336ms (elapsed 24.3s)
+    [ 12/16] ok in=498 out=153 ttft=245ms compl=11596ms (elapsed 25.9s)
+    [ 13/16] ok in=392 out=161 ttft=383ms compl=11949ms (elapsed 26.6s)
+    [ 14/16] ok in=293 out=182 ttft=386ms compl=13522ms (elapsed 27.9s)
+    [ 15/16] ok in=408 out=168 ttft=244ms compl=11620ms (elapsed 29.6s)
+    [ 16/16] ok in=384 out=222 ttft=213ms compl=15269ms (elapsed 31.6s)
+  conc=8    TTFT p50=    316ms  p99=    964ms  Compl p50=  13531ms  p99=  18255ms  GenTok/s=     87  ok=16
+
+  Running concurrency=16 (32 requests)...
+    [  1/32] ok in=492 out=39 ttft=1895ms compl=4752ms (elapsed 4.8s)
+    [  2/32] ok in=440 out=112 ttft=1895ms compl=10308ms (elapsed 10.3s)
+    [  3/32] ok in=299 out=130 ttft=1896ms compl=11703ms (elapsed 11.7s)
+    [  4/32] ok in=282 out=148 ttft=1896ms compl=13178ms (elapsed 13.2s)
+    [  5/32] ok in=498 out=153 ttft=1895ms compl=13717ms (elapsed 13.7s)
+    [  6/32] ok in=392 out=161 ttft=1895ms compl=14452ms (elapsed 14.5s)
+    [  7/32] ok in=408 out=168 ttft=1893ms compl=15140ms (elapsed 15.1s)
+    [  8/32] ok in=396 out=180 ttft=1896ms compl=16178ms (elapsed 16.2s)
+    [  9/32] ok in=293 out=182 ttft=245ms compl=16253ms (elapsed 16.3s)
+    [ 10/32] ok in=416 out=189 ttft=1896ms compl=17189ms (elapsed 17.2s)
+    [ 11/32] ok in=324 out=191 ttft=1896ms compl=17477ms (elapsed 17.5s)
+    [ 12/32] ok in=330 out=204 ttft=1895ms compl=18623ms (elapsed 18.6s)
+    [ 13/32] ok in=470 out=208 ttft=1896ms compl=19060ms (elapsed 19.1s)
+    [ 14/32] ok in=384 out=222 ttft=1893ms compl=20261ms (elapsed 20.3s)
+    [ 15/32] ok in=397 out=77 ttft=241ms compl=7555ms (elapsed 20.7s)
+    [ 16/32] ok in=397 out=229 ttft=246ms compl=21053ms (elapsed 21.1s)
+    [ 17/32] ok in=380 out=231 ttft=1896ms compl=21401ms (elapsed 21.4s)
+    [ 18/32] ok in=360 out=50 ttft=221ms compl=5222ms (elapsed 21.4s)
+    [ 19/32] ok in=487 out=205 ttft=250ms compl=17669ms (elapsed 22.4s)
+    [ 20/32] ok in=426 out=66 ttft=243ms compl=5535ms (elapsed 24.6s)
+    [ 21/32] ok in=318 out=162 ttft=214ms compl=14124ms (elapsed 25.8s)
+    [ 22/32] ok in=261 out=204 ttft=208ms compl=17321ms (elapsed 27.6s)
+    [ 23/32] ok in=310 out=167 ttft=215ms compl=14129ms (elapsed 27.8s)
+    [ 24/32] ok in=283 out=128 ttft=211ms compl=10080ms (elapsed 28.7s)
+    [ 25/32] ok in=282 out=151 ttft=209ms compl=12073ms (elapsed 29.3s)
+    [ 26/32] ok in=401 out=200 ttft=244ms compl=16273ms (elapsed 30.7s)
+    [ 27/32] ok in=513 out=192 ttft=415ms compl=15304ms (elapsed 31.6s)
+    [ 28/32] ok in=372 out=215 ttft=219ms compl=17103ms (elapsed 32.2s)
+    [ 29/32] ok in=267 out=156 ttft=197ms compl=11261ms (elapsed 32.3s)
+    [ 30/32] ok in=477 out=198 ttft=257ms compl=15171ms (elapsed 32.6s)
+    [ 31/32] ok in=395 out=169 ttft=245ms compl=12515ms (elapsed 32.8s)
+    [ 32/32] ok in=487 out=237 ttft=243ms compl=16500ms (elapsed 37.2s)
+  conc=16   TTFT p50=    254ms  p99=   1896ms  Compl p50=  15155ms  p99=  21293ms  GenTok/s=    143  ok=32
+
+  Running concurrency=32 (64 requests)...
+    [  1/64] ok in=492 out=39 ttft=11360ms compl=16046ms (elapsed 16.0s)
+    [  2/64] ok in=426 out=63 ttft=1859ms compl=17086ms (elapsed 17.1s)
+    [  3/64] ok in=360 out=50 ttft=14525ms compl=19680ms (elapsed 19.7s)
+    [  4/64] ok in=283 out=128 ttft=6469ms compl=20488ms (elapsed 20.5s)
+    [  5/64] ok in=299 out=130 ttft=1861ms compl=20566ms (elapsed 20.6s)
+    [  6/64] ok in=282 out=148 ttft=1862ms compl=21388ms (elapsed 21.4s)
+    [  7/64] ok in=282 out=151 ttft=1860ms compl=21463ms (elapsed 21.5s)
+    [  8/64] ok in=498 out=153 ttft=1861ms compl=21612ms (elapsed 21.6s)
+    [  9/64] ok in=392 out=161 ttft=1861ms compl=21984ms (elapsed 22.0s)
+    [ 10/64] ok in=318 out=162 ttft=1860ms compl=22057ms (elapsed 22.1s)
+    [ 11/64] ok in=310 out=167 ttft=1860ms compl=22280ms (elapsed 22.3s)
+    [ 12/64] ok in=397 out=77 ttft=15063ms compl=22572ms (elapsed 22.6s)
+    [ 13/64] ok in=395 out=169 ttft=1859ms compl=22572ms (elapsed 22.6s)
+    [ 14/64] ok in=440 out=112 ttft=12831ms compl=23674ms (elapsed 23.7s)
+    [ 15/64] ok in=416 out=189 ttft=185ms compl=23997ms (elapsed 24.0s)
+    [ 16/64] ok in=513 out=192 ttft=1860ms compl=24214ms (elapsed 24.2s)
+    [ 17/64] ok in=401 out=200 ttft=1860ms compl=24799ms (elapsed 24.8s)
+    [ 18/64] ok in=330 out=204 ttft=1861ms compl=29171ms (elapsed 29.2s)
+    [ 19/64] ok in=261 out=204 ttft=1860ms compl=29171ms (elapsed 29.2s)
+    [ 20/64] ok in=470 out=208 ttft=1862ms compl=30903ms (elapsed 30.9s)
+    [ 21/64] ok in=397 out=229 ttft=1862ms compl=32839ms (elapsed 32.8s)
+    [ 22/64] ok in=396 out=180 ttft=13216ms compl=34509ms (elapsed 34.5s)
+    [ 23/64] ok in=267 out=156 ttft=17370ms compl=35647ms (elapsed 35.7s)
+    [ 24/64] ok in=477 out=198 ttft=13540ms compl=35798ms (elapsed 35.8s)
+    [ 25/64] ok in=324 out=191 ttft=15442ms compl=36317ms (elapsed 36.3s)
+    [ 26/64] ok in=408 out=168 ttft=18393ms compl=36830ms (elapsed 36.8s)
+    [ 27/64] ok in=293 out=182 ttft=17010ms compl=36904ms (elapsed 36.9s)
+    [ 28/64] ok in=300 out=166 ttft=3332ms compl=21153ms (elapsed 37.2s)
+    [ 29/64] ok in=327 out=138 ttft=2007ms compl=17690ms (elapsed 38.2s)
+    [ 30/64] ok in=372 out=215 ttft=15440ms compl=38471ms (elapsed 38.5s)
+    [ 31/64] ok in=487 out=205 ttft=17622ms compl=39604ms (elapsed 39.6s)
+    [ 32/64] ok in=487 out=237 ttft=14304ms compl=39677ms (elapsed 39.7s)
+    [ 33/64] ok in=384 out=222 ttft=18943ms compl=44235ms (elapsed 44.2s)
+    [ 34/64] ok in=278 out=222 ttft=2722ms compl=27734ms (elapsed 44.8s)
+    [ 35/64] ok in=380 out=231 ttft=18945ms compl=44897ms (elapsed 44.9s)
+    [ 36/64] ok in=335 out=238 ttft=1552ms compl=27050ms (elapsed 46.7s)
+    [ 37/64] ok in=465 out=167 ttft=9597ms compl=25546ms (elapsed 47.5s)
+    [ 38/64] ok in=419 out=221 ttft=3281ms compl=27039ms (elapsed 47.6s)
+    [ 39/64] ok in=451 out=137 ttft=11284ms compl=23615ms (elapsed 47.8s)
+    [ 40/64] ok in=384 out=169 ttft=10260ms compl=25982ms (elapsed 48.0s)
+    [ 41/64] ok in=371 out=191 ttft=8860ms compl=26650ms (elapsed 48.1s)
+    [ 42/64] ok in=272 out=173 ttft=10473ms compl=26225ms (elapsed 48.8s)
+    [ 43/64] ok in=496 out=123 ttft=12938ms compl=23998ms (elapsed 48.8s)
+    [ 44/64] ok in=285 out=219 ttft=7635ms compl=27486ms (elapsed 48.9s)
+    [ 45/64] ok in=341 out=155 ttft=11251ms compl=24951ms (elapsed 48.9s)
+    [ 46/64] ok in=308 out=218 ttft=9141ms compl=28367ms (elapsed 50.0s)
+    [ 47/64] ok in=270 out=88 ttft=9493ms compl=17390ms (elapsed 50.2s)
+    [ 48/64] ok in=383 out=196 ttft=10460ms compl=27463ms (elapsed 51.1s)
+    [ 49/64] ok in=270 out=42 ttft=11132ms compl=15158ms (elapsed 52.0s)
+    [ 50/64] ok in=351 out=233 ttft=10332ms compl=30738ms (elapsed 53.0s)
+    [ 51/64] ok in=426 out=233 ttft=11242ms compl=31325ms (elapsed 53.9s)
+    [ 52/64] ok in=443 out=206 ttft=9555ms compl=26627ms (elapsed 55.8s)
+    [ 53/64] ok in=379 out=185 ttft=10287ms compl=25700ms (elapsed 56.6s)
+    [ 54/64] ok in=365 out=245 ttft=9300ms compl=29390ms (elapsed 58.6s)
+    [ 55/64] ok in=402 out=145 ttft=10930ms compl=22912ms (elapsed 58.6s)
+    [ 56/64] ok in=397 out=137 ttft=11243ms compl=21865ms (elapsed 59.1s)
+    [ 57/64] ok in=392 out=173 ttft=11536ms compl=24683ms (elapsed 61.6s)
+    [ 58/64] ok in=488 out=157 ttft=10793ms compl=22264ms (elapsed 61.9s)
+    [ 59/64] ok in=469 out=212 ttft=11304ms compl=28195ms (elapsed 62.7s)
+    [ 60/64] ok in=460 out=212 ttft=10838ms compl=27146ms (elapsed 63.5s)
+    [ 61/64] ok in=400 out=217 ttft=11106ms compl=27931ms (elapsed 63.7s)
+    [ 62/64] ok in=462 out=176 ttft=11643ms compl=24186ms (elapsed 63.9s)
+    [ 63/64] ok in=435 out=208 ttft=11681ms compl=26767ms (elapsed 65.2s)
+    [ 64/64] ok in=317 out=239 ttft=10542ms compl=27923ms (elapsed 66.1s)
+  conc=32   TTFT p50=  10396ms  p99=  18944ms  Compl p50=  26103ms  p99=  44480ms  GenTok/s=    169  ok=64
+
+====================================================================================================
+ Conc   TTFT_p50   TTFT_p99  Compl_p50  Compl_p99   TPOT_p50   TPOT_p99   GenTok/s    OK
+       (ms)       (ms)        (ms)        (ms)        (ms)        (ms)
+----------------------------------------------------------------------------------------------------
+    1        159        186      12216      14311       61.6       61.7         16     8
+    2        234        343      12948      15482       66.2       66.6         29     8
+    4        241        534      13302      15459       68.4       69.9         52     8
+    8        316        964      13531      18255       74.0       76.9         87    16
+   16        254       1896      15155      21293       80.2      100.3        143    32
+   32      10396      18944      26103      44480      107.6      182.2        169    64
+====================================================================================================

@@ -1,0 +1,46 @@
+=== B.7 cache-ON + chunk=512: bench_serving input-len 1024 conc 1/4/16 ===
+  Auto-detected model: Qwen/Qwen3-8B
+
+============================================================
+  Serving Benchmark
+  Server       : http://localhost:8000
+  Model        : Qwen/Qwen3-8B
+  Load mode    : closed-loop
+  Requests     : max(conc*2, 8) per concurrency
+  Input len    : 1024
+  Output len   : 256
+  Randomness   : 0.5
+  Concurrencies: [1, 4, 16]
+============================================================
+
+  Loading tokenizer...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  Loading WildChat prompts...
+  Loaded 160 candidate prompts
+  Preparing 32 requests...
+  Input lengths:  min=517, max=1029, mean=759
+  Output lengths: min=129, max=252, mean=186
+
+  Running concurrency=1 (8 requests, closed-loop)...
+    [  1/8] ok in=1029 out=173 ttft=1163ms compl=12733ms (elapsed 12.7s)
+    [  2/8] ok in=621 out=204 ttft=306ms compl=13893ms (elapsed 26.6s)
+    [  3/8] ok in=721 out=167 ttft=333ms compl=11426ms (elapsed 38.1s)
+    [  4/8] ok in=896 out=169 ttft=376ms compl=11633ms (elapsed 49.7s)
+    [  5/8] ok in=517 out=210 ttft=279ms compl=14219ms (elapsed 63.9s)
+    [  6/8] ok in=1019 out=132 ttft=414ms compl=9183ms (elapsed 73.1s)
+    [  7/8] ok in=628 out=220 ttft=300ms compl=14895ms (elapsed 88.0s)
+    [  8/8] ok in=835 out=189 ttft=362ms compl=12929ms (elapsed 100.9s)
+  conc=1      TTFT p50=    348ms  p99=   1110ms  Compl p50=  12831ms  p99=  14848ms  GenTok/s=     15  ok=8
+
+  Running concurrency=4 (8 requests, closed-loop)...
+    [  1/8] ok in=1029 out=0 ttft=0ms compl=600377ms (elapsed 600.4s)
+    [  2/8] ok in=721 out=0 ttft=0ms compl=600377ms (elapsed 600.4s)
+    [  3/8] ok in=621 out=2 ttft=84ms compl=600378ms (elapsed 600.4s)
+    [  4/8] ok in=896 out=0 ttft=0ms compl=600377ms (elapsed 600.4s)
+    [  5/8] ok in=517 out=0 ttft=0ms compl=601098ms (elapsed 1201.5s)
+    [  6/8] ok in=628 out=0 ttft=0ms compl=601098ms (elapsed 1201.5s)
+    [  7/8] ok in=1019 out=0 ttft=0ms compl=601098ms (elapsed 1201.5s)
+    [  8/8] ok in=835 out=0 ttft=0ms compl=601098ms (elapsed 1201.5s)
+  conc=4      TTFT p50=    nanms  p99=    nanms  Compl p50=    nanms  p99=    nanms  GenTok/s=      0  ok=0
+
+  Running concurrency=16 (32 requests, closed-loop)...

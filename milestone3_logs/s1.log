@@ -1,0 +1,178 @@
+=== A.1 baseline (chunk=0): bench_serving input-len 4096 conc 1 ===
+  Auto-detected model: Qwen/Qwen3-8B
+
+============================================================
+  Serving Benchmark
+  Server       : http://localhost:8000
+  Model        : Qwen/Qwen3-8B
+  Load mode    : closed-loop
+  Requests     : 4 per level
+  Input len    : 4096
+  Output len   : 256
+  Randomness   : 0.5
+  Concurrencies: [1]
+============================================================
+
+  Loading tokenizer...
+  Loading WildChat prompts...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  Loaded 20 candidate prompts
+  Preparing 4 requests...
+  Input lengths:  min=2709, max=3187, mean=2928
+  Output lengths: min=129, max=242, mean=210
+
+  Running concurrency=1 (4 requests, closed-loop)...
+    [  1/4] ok in=2867 out=235 ttft=1702ms compl=17711ms (elapsed 17.7s)
+    [  2/4] ok in=2951 out=242 ttft=1111ms compl=17621ms (elapsed 35.3s)
+    [  3/4] ok in=3187 out=129 ttft=1170ms compl=9950ms (elapsed 45.3s)
+    [  4/4] ok in=2709 out=236 ttft=1011ms compl=17078ms (elapsed 62.4s)
+  conc=1      TTFT p50=   1141ms  p99=   1686ms  Compl p50=  17350ms  p99=  17708ms  GenTok/s=     14  ok=4
+
+====================================================================================================
+  Conc   TTFT_p50   TTFT_p99  Compl_p50  Compl_p99   TPOT_p50   TPOT_p99   GenTok/s    OK
+        (ms)       (ms)        (ms)        (ms)        (ms)        (ms)
+----------------------------------------------------------------------------------------------------
+     1       1141       1686      17350      17708       68.5       68.6         14     4
+====================================================================================================
+
+=== B.7 cache-off baseline: bench_serving input-len 1024 conc 1/4/16 ===
+  Auto-detected model: Qwen/Qwen3-8B
+
+============================================================
+  Serving Benchmark
+  Server       : http://localhost:8000
+  Model        : Qwen/Qwen3-8B
+  Load mode    : closed-loop
+  Requests     : max(conc*2, 8) per concurrency
+  Input len    : 1024
+  Output len   : 256
+  Randomness   : 0.5
+  Concurrencies: [1, 4, 16]
+============================================================
+
+  Loading tokenizer...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  Loading WildChat prompts...
+  Loaded 160 candidate prompts
+  Preparing 32 requests...
+  Input lengths:  min=517, max=1029, mean=759
+  Output lengths: min=129, max=252, mean=186
+
+  Running concurrency=1 (8 requests, closed-loop)...
+    [  1/8] ok in=1029 out=173 ttft=354ms compl=11915ms (elapsed 11.9s)
+    [  2/8] ok in=621 out=204 ttft=257ms compl=13877ms (elapsed 25.8s)
+    [  3/8] ok in=721 out=167 ttft=270ms compl=11420ms (elapsed 37.2s)
+    [  4/8] ok in=896 out=169 ttft=290ms compl=11581ms (elapsed 48.8s)
+    [  5/8] ok in=517 out=210 ttft=239ms compl=14247ms (elapsed 63.0s)
+    [  6/8] ok in=1019 out=132 ttft=338ms compl=9154ms (elapsed 72.2s)
+    [  7/8] ok in=628 out=220 ttft=256ms compl=14935ms (elapsed 87.1s)
+    [  8/8] ok in=835 out=189 ttft=284ms compl=12899ms (elapsed 100.0s)
+  conc=1      TTFT p50=    277ms  p99=    353ms  Compl p50=  12407ms  p99=  14887ms  GenTok/s=     15  ok=8
+
+  Running concurrency=4 (8 requests, closed-loop)...
+    [  1/8] ok in=721 out=167 ttft=462ms compl=13276ms (elapsed 13.3s)
+    [  2/8] ok in=896 out=169 ttft=1206ms compl=13739ms (elapsed 13.7s)
+    [  3/8] ok in=1029 out=173 ttft=1207ms compl=14360ms (elapsed 14.4s)
+    [  4/8] ok in=621 out=204 ttft=462ms compl=16796ms (elapsed 16.8s)
+    [  5/8] ok in=1019 out=132 ttft=399ms compl=10497ms (elapsed 24.2s)
+    [  6/8] ok in=517 out=210 ttft=312ms compl=16355ms (elapsed 29.6s)
+    [  7/8] ok in=835 out=189 ttft=353ms compl=13975ms (elapsed 30.8s)
+    [  8/8] ok in=628 out=220 ttft=322ms compl=16478ms (elapsed 30.8s)
+  conc=4      TTFT p50=    430ms  p99=   1207ms  Compl p50=  14168ms  p99=  16774ms  GenTok/s=     47  ok=8
+
+  Running concurrency=16 (32 requests, closed-loop)...
+    [  1/32] ok in=1019 out=132 ttft=4510ms compl=15341ms (elapsed 15.3s)
+    [  2/32] ok in=1018 out=145 ttft=4510ms compl=16752ms (elapsed 16.8s)
+    [  3/32] ok in=594 out=149 ttft=4510ms compl=17420ms (elapsed 17.4s)
+    [  4/32] ok in=644 out=160 ttft=4510ms compl=18599ms (elapsed 18.6s)
+    [  5/32] ok in=980 out=15 ttft=416ms compl=1932ms (elapsed 18.7s)
+    [  6/32] ok in=721 out=167 ttft=4511ms compl=19673ms (elapsed 19.7s)
+    [  7/32] ok in=896 out=169 ttft=4511ms compl=20102ms (elapsed 20.1s)
+    [  8/32] ok in=1003 out=170 ttft=4510ms compl=20185ms (elapsed 20.2s)
+    [  9/32] ok in=1029 out=173 ttft=4511ms compl=20934ms (elapsed 20.9s)
+    [ 10/32] ok in=731 out=179 ttft=4510ms compl=21662ms (elapsed 21.7s)
+    [ 11/32] ok in=571 out=189 ttft=4510ms compl=22728ms (elapsed 22.7s)
+    [ 12/32] ok in=835 out=189 ttft=4510ms compl=22729ms (elapsed 22.7s)
+    [ 13/32] ok in=621 out=204 ttft=4511ms compl=24491ms (elapsed 24.5s)
+    [ 14/32] ok in=517 out=210 ttft=4511ms compl=25316ms (elapsed 25.3s)
+    [ 15/32] ok in=628 out=220 ttft=267ms compl=26388ms (elapsed 26.4s)
+    [ 16/32] ok in=837 out=230 ttft=4509ms compl=27635ms (elapsed 27.6s)
+    [ 17/32] ok in=786 out=236 ttft=4510ms compl=28299ms (elapsed 28.3s)
+    [ 18/32] ok in=742 out=129 ttft=342ms compl=13502ms (elapsed 33.2s)
+    [ 19/32] ok in=584 out=143 ttft=331ms compl=14371ms (elapsed 34.5s)
+    [ 20/32] ok in=751 out=145 ttft=578ms compl=14529ms (elapsed 34.7s)
+    [ 21/32] ok in=768 out=185 ttft=343ms compl=18814ms (elapsed 36.2s)
+    [ 22/32] ok in=538 out=186 ttft=571ms compl=18583ms (elapsed 37.3s)
+    [ 23/32] ok in=736 out=161 ttft=613ms compl=14775ms (elapsed 37.5s)
+    [ 24/32] ok in=587 out=188 ttft=325ms compl=17165ms (elapsed 38.8s)
+    [ 25/32] ok in=712 out=152 ttft=340ms compl=12750ms (elapsed 39.1s)
+    [ 26/32] ok in=899 out=240 ttft=410ms compl=23873ms (elapsed 39.2s)
+    [ 27/32] ok in=583 out=214 ttft=337ms compl=20766ms (elapsed 39.4s)
+    [ 28/32] ok in=549 out=212 ttft=315ms compl=19251ms (elapsed 40.2s)
+    [ 29/32] ok in=999 out=190 ttft=411ms compl=16355ms (elapsed 40.8s)
+    [ 30/32] ok in=804 out=252 ttft=614ms compl=21528ms (elapsed 44.3s)
+    [ 31/32] ok in=1002 out=232 ttft=411ms compl=19013ms (elapsed 44.3s)
+    [ 32/32] ok in=611 out=238 ttft=330ms compl=18505ms (elapsed 46.1s)
+  conc=16     TTFT p50=    613ms  p99=   4511ms  Compl p50=  19132ms  p99=  28093ms  GenTok/s=    126  ok=32
+
+====================================================================================================
+  Conc   TTFT_p50   TTFT_p99  Compl_p50  Compl_p99   TPOT_p50   TPOT_p99   GenTok/s    OK
+        (ms)       (ms)        (ms)        (ms)        (ms)        (ms)
+----------------------------------------------------------------------------------------------------
+     1        277        353      12407      14887       67.1       67.3         15     8
+     4        430       1207      14168      16774       76.6       80.2         47     8
+    16        613       4511      19132      28093       95.7      115.9        126    32
+====================================================================================================
+
+=== A.2 MMLU baseline (chunk=0) ===
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+
+============================================================
+  Accuracy Benchmark
+  Dataset     : mmlu
+  Samples     : 200
+  Max tokens  : 32
+  Concurrency : 8
+  Server      : http://localhost:8000
+============================================================
+
+Loading dataset...
+  Loaded 200 samples
+
+Running evaluation...
+  [10/200] accuracy=60.0%  latency=1.9s
+  [20/200] accuracy=55.0%  latency=2.6s
+  [30/200] accuracy=60.0%  latency=0.3s
+  [40/200] accuracy=60.0%  latency=0.5s
+  [50/200] accuracy=58.0%  latency=3.7s
+  [60/200] accuracy=61.7%  latency=0.5s
+  [70/200] accuracy=62.9%  latency=0.6s
+  [80/200] accuracy=61.3%  latency=0.3s
+  [90/200] accuracy=58.9%  latency=0.4s
+  [100/200] accuracy=61.0%  latency=3.0s
+  [110/200] accuracy=57.3%  latency=0.9s
+  [120/200] accuracy=58.3%  latency=4.0s
+  [130/200] accuracy=59.2%  latency=4.1s
+  [140/200] accuracy=60.0%  latency=3.8s
+  [150/200] accuracy=58.7%  latency=3.6s
+  [160/200] accuracy=59.4%  latency=0.9s
+  [170/200] accuracy=60.0%  latency=0.7s
+  [180/200] accuracy=61.1%  latency=0.3s
+  [190/200] accuracy=61.6%  latency=4.3s
+  [200/200] accuracy=61.5%  latency=2.3s
+
+============================================================
+  MMLU Accuracy Report
+  Samples    : 200
+  Correct    : 123
+  Accuracy   : 61.5%
+  Avg latency: 1.54s
+============================================================
+
+  Sample incorrect predictions (5 of 77):
+    Gold=1  Pred=2  Output: C...
+    Gold=2  Pred=1  Output: B. 2...
+    Gold=1  Pred=0  Output: A. Task culture...
+    Gold=1  Pred=2  Output: C. left submandibular lymph node....
+    Gold=1  Pred=2  Output: C...
+DONE

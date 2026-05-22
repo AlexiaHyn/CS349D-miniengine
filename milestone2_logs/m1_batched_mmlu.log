@@ -1,0 +1,56 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+
+============================================================
+  Accuracy Benchmark
+  Dataset     : mmlu
+  Samples     : 200
+  Max tokens  : 32
+  Concurrency : 8
+  Server      : http://localhost:8000
+============================================================
+
+Loading dataset...
+Generating test split:   0%|          | 0/14042 [00:00<?, ? examples/s]Generating test split: 100%|██████████| 14042/14042 [00:00<00:00, 429515.23 examples/s]
+Generating validation split:   0%|          | 0/1531 [00:00<?, ? examples/s]Generating validation split: 100%|██████████| 1531/1531 [00:00<00:00, 283784.67 examples/s]
+Generating dev split:   0%|          | 0/285 [00:00<?, ? examples/s]Generating dev split: 100%|██████████| 285/285 [00:00<00:00, 102625.05 examples/s]
+Generating auxiliary_train split:   0%|          | 0/99842 [00:00<?, ? examples/s]Generating auxiliary_train split:  20%|██        | 20000/99842 [00:00<00:00, 188492.80 examples/s]Generating auxiliary_train split:  51%|█████     | 51000/99842 [00:00<00:00, 251709.19 examples/s]Generating auxiliary_train split:  88%|████████▊ | 88000/99842 [00:00<00:00, 300214.94 examples/s]Generating auxiliary_train split: 100%|██████████| 99842/99842 [00:00<00:00, 303200.87 examples/s]
+  Loaded 200 samples
+
+Running evaluation...
+  [10/200] accuracy=60.0%  latency=2.7s
+  [20/200] accuracy=60.0%  latency=1.1s
+  [30/200] accuracy=56.7%  latency=1.2s
+  [40/200] accuracy=55.0%  latency=0.3s
+  [50/200] accuracy=56.0%  latency=1.1s
+  [60/200] accuracy=58.3%  latency=5.7s
+  [70/200] accuracy=61.4%  latency=5.9s
+  [80/200] accuracy=60.0%  latency=0.4s
+  [90/200] accuracy=60.0%  latency=0.9s
+  [100/200] accuracy=60.0%  latency=5.5s
+  [110/200] accuracy=57.3%  latency=1.2s
+  [120/200] accuracy=58.3%  latency=0.3s
+  [130/200] accuracy=59.2%  latency=0.8s
+  [140/200] accuracy=60.0%  latency=1.8s
+  [150/200] accuracy=59.3%  latency=5.0s
+  [160/200] accuracy=59.4%  latency=1.0s
+  [170/200] accuracy=60.0%  latency=1.3s
+  [180/200] accuracy=61.7%  latency=0.4s
+  [190/200] accuracy=61.6%  latency=4.5s
+  [200/200] accuracy=61.5%  latency=2.4s
+
+============================================================
+  MMLU Accuracy Report
+  Samples    : 200
+  Correct    : 123
+  Accuracy   : 61.5%
+  Avg latency: 2.27s
+============================================================
+
+  Sample incorrect predictions (5 of 77):
+    Gold=1  Pred=2  Output: C...
+    Gold=2  Pred=1  Output: B. 2...
+    Gold=1  Pred=0  Output: A. Task culture...
+    Gold=1  Pred=2  Output: C. left submandibular lymph node....
+    Gold=0  Pred=None  Output: To solve this, we need to understand the energy levels of positronium.
+
+### Posi...
