@@ -251,7 +251,25 @@ class Scheduler:
                     else:
                         self.running.append(req)
 
-        # ── Phase 2: paged batched decode ───────────────────────────────
+        # ── Phase 2: paged batched decode (with retraction on OOM) ──────
+        # Decode grows each running request's KV by one page when it
+        # crosses a page boundary.  Page growth is unpredictable, so the
+        # pool can drain mid-run.  Rather than crash, RETRACT a victim:
+        # free its KV pages, reset it to a fresh prompt, and push it back
+        # onto the waiting queue.  It will be re-admitted (and re-
+        # prefilled) once capacity returns.  Victim = youngest running
+        # request (last admitted, least sunk work) — a simple, effective
+        # heuristic.
+        while self.running and not self.engine.grow_decode_pages(self.running):
+            victim = self.running.pop()  # youngest (appended last)
+            self._retract_request(victim)
+            logger.warning(
+                "Decode OOM: retracted request %s (running=%d, waiting=%d)",
+                victim.request_id,
+                len(self.running),
+                len(self.waiting),
+            )
+
         if self.running:
             token_ids = self.engine.paged_batched_decode(self.running)
             still_running: list[Request] = []
@@ -265,6 +283,23 @@ class Scheduler:
             self.running = still_running
 
         return finished
+
+    def _retract_request(self, req: Request) -> None:
+        """Evict an in-flight request back to the waiting queue.
+
+        Frees all its KV pages (and drops any radix-cache borrow lock via
+        ``free_paged_state``), discards the tokens generated so far, and
+        re-enqueues it at the FRONT of the waiting queue so it's re-
+        admitted first when capacity returns.  Re-prefill recomputes the
+        prompt KV from scratch; partial generation is lost (acceptable —
+        retraction is a rare backstop under memory pressure).
+        """
+        self.engine.free_paged_state(req)
+        req.output_ids.clear()
+        req.cache_hit_tokens = 0
+        req.status = RequestStatus.WAITING
+        with self._lock:
+            self.waiting.appendleft(req)
 
     # ── Helpers ─────────────────────────────────────────────────────────
 

@@ -1068,14 +1068,42 @@ class Engine:
     # ── Paged decode (varlen, q_len=1 per req) ──────────────────────────
 
     @torch.inference_mode()
+    def grow_decode_pages(self, requests: list[Request]) -> bool:
+        """Ensure each running request has a page for its next decode token.
+
+        Returns True if every request's page table was grown successfully,
+        False if the pool was exhausted even after cache eviction (the
+        scheduler then retracts a victim and retries).  Allocation is
+        all-or-nothing per call: on failure we stop before mutating any
+        further state so the caller's retraction sees a consistent view.
+        """
+        assert self.pool is not None
+        for r in requests:
+            s = self._state(r)
+            need = self.pool.pages_needed(s.cache_seq_len + 1)
+            if need > len(s.page_table):
+                try:
+                    extra = self.pool.allocate(need - len(s.page_table))
+                except RuntimeError:
+                    return False
+                s.page_table.extend(extra)
+        return True
+
     def paged_batched_decode(self, requests: list[Request]) -> list[int]:
-        """One new token per request — tries CUDA graph; falls back to eager."""
+        """One new token per request — tries CUDA graph; falls back to eager.
+
+        Assumes ``grow_decode_pages`` has already allocated the new page
+        for every request (the scheduler calls it, handling retraction on
+        OOM); here we only verify the invariant defensively.
+        """
         if not requests:
             return []
         assert self.pool is not None
         states = [self._state(r) for r in requests]
 
-        # Grow page tables if cache_seq_len + 1 outgrows the current allocation.
+        # Defensive: pages should already be grown by the scheduler via
+        # grow_decode_pages.  If not (e.g. a direct caller), grow now —
+        # but this path can raise on OOM.
         for s in states:
             need = self.pool.pages_needed(s.cache_seq_len + 1)
             if need > len(s.page_table):
