@@ -194,29 +194,62 @@ class Scheduler:
         assert pool is not None, "scheduler in paged mode but engine has no KV pool"
 
         # ── Phase 1: admit + batched paged prefill ──────────────────────
+        # Gate admission on the CUMULATIVE page reservation of the whole
+        # batch, not per-request — otherwise N requests each individually
+        # "fitting" can collectively exceed the pool and OOM mid-prefill,
+        # corrupting in-flight state.  Reserve prompt pages + 1 decode-
+        # headroom page each.  A cache hit (radix prefix match) can only
+        # *reduce* the real allocation, so this estimate is a safe upper
+        # bound; the pool's eviction-on-allocate recovers cached pages
+        # when the free list runs short.
         with self._lock:
             to_prefill: list[Request] = []
+            reserved = 0
             while (
                 self.waiting
                 and len(self.running) + len(to_prefill) < self.max_running
             ):
                 req = self.waiting[0]
-                if pool.num_free < pool.pages_needed(len(req.input_ids)):
-                    break  # can't fit; wait for pages to free
+                need = pool.pages_needed(len(req.input_ids)) + 1
+                # Cached pages held by the radix cache are evictable, so
+                # count them as available alongside the free list.
+                evictable = getattr(pool, "num_evictable", 0)
+                if reserved + need > pool.num_free + evictable:
+                    break  # batch is full; wait for pages to free
+                reserved += need
                 to_prefill.append(self.waiting.popleft())
 
         if to_prefill:
             for req in to_prefill:
                 req.status = RequestStatus.RUNNING
-            for req, token_id in zip(
-                to_prefill, self.engine.paged_batched_prefill(to_prefill)
-            ):
-                req.output_ids.append(token_id)
-                self._stream_token(req, token_id)
-                if self._check_finished(req, token_id):
-                    self._finish_request(req, finished)
-                else:
-                    self.running.append(req)
+            try:
+                token_ids = self.engine.paged_batched_prefill(to_prefill)
+            except RuntimeError:
+                # Pool exhausted despite the admission estimate (e.g.
+                # eviction couldn't free enough because pages are pinned
+                # by other in-flight requests).  Roll the whole batch back
+                # to the waiting queue rather than leaving half-built
+                # state in `running`; they retry next step.
+                logger.warning(
+                    "paged prefill OOM for batch of %d; returning to waiting queue",
+                    len(to_prefill),
+                )
+                for req in to_prefill:
+                    self.engine.free_paged_state(req)
+                    req.status = RequestStatus.WAITING
+                with self._lock:
+                    for req in reversed(to_prefill):
+                        self.waiting.appendleft(req)
+                token_ids = None
+
+            if token_ids is not None:
+                for req, token_id in zip(to_prefill, token_ids):
+                    req.output_ids.append(token_id)
+                    self._stream_token(req, token_id)
+                    if self._check_finished(req, token_id):
+                        self._finish_request(req, finished)
+                    else:
+                        self.running.append(req)
 
         # ── Phase 2: paged batched decode ───────────────────────────────
         if self.running:

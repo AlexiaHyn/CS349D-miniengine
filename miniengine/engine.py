@@ -691,6 +691,7 @@ class Engine:
             full_pages = self.pool.pages_needed(len(r.input_ids))
             borrowed_pages: list[int] = []
             matched = 0
+            locked_node = None
             if self.radix_cache is not None:
                 result = self.radix_cache.match_prefix(r.input_ids)
                 if result.matched_tokens > 0 and result.last_node is not None:
@@ -698,14 +699,26 @@ class Engine:
                     # pages out from under us while the request is
                     # in-flight.
                     self.radix_cache.inc_lock_ref(result.last_node)
+                    locked_node = result.last_node
                     borrowed_pages = list(result.matched_pages)
                     matched = result.matched_tokens
-                    s.cache_node = result.last_node
-                    s.cache_borrowed_pages = len(borrowed_pages)
-                    r.cache_hit_tokens = matched
-            # Allocate fresh pages for the uncached tail.
+            # Allocate fresh pages for the uncached tail.  This can raise
+            # (pool exhausted even after eviction).  Roll back the borrow
+            # lock so we don't leave a phantom lock pinning cache pages,
+            # and leave the request's state UNTOUCHED so the scheduler
+            # treats it as not-yet-admitted (no half-built page_table that
+            # would feed out-of-range page ids to the attention kernel).
             tail_pages = full_pages - len(borrowed_pages)
-            fresh = self.pool.allocate(tail_pages) if tail_pages > 0 else []
+            try:
+                fresh = self.pool.allocate(tail_pages) if tail_pages > 0 else []
+            except RuntimeError:
+                if locked_node is not None:
+                    self.radix_cache.dec_lock_ref(locked_node)
+                raise
+            # Commit state only after the allocation succeeded.
+            s.cache_node = locked_node
+            s.cache_borrowed_pages = len(borrowed_pages)
+            r.cache_hit_tokens = matched
             s.page_table = borrowed_pages + fresh
             s.cache_seq_len = matched
 
