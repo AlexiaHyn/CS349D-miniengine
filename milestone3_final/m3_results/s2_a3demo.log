@@ -1,0 +1,25 @@
+=== A.3 SUCCESS DEMO: S2 chunk=512 input-len 8192 conc 1 ===
+  Auto-detected model: Qwen/Qwen3-8B
+
+============================================================
+  Serving Benchmark
+  Server       : http://localhost:8000
+  Model        : Qwen/Qwen3-8B
+  Load mode    : closed-loop
+  Requests     : 2 per level
+  Input len    : 8192
+  Output len   : 128
+  Randomness   : 0.5
+  Concurrencies: [1]
+============================================================
+
+  Loading tokenizer...
+  Loading WildChat prompts...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  Loaded 10 candidate prompts
+  Preparing 2 requests...
+  Input lengths:  min=4348, max=7559, mean=5954
+  Output lengths: min=68, max=75, mean=72
+
+  Running concurrency=1 (2 requests, closed-loop)...
+DONE

@@ -1,0 +1,35 @@
+=== B.6-v3 turns12 maxtok4 sessions16 CACHE-OFF ===
+  Server      : http://localhost:8000
+  Workload    : multiturn
+  Sessions    : 16
+  Turns       : 12
+  Concurrency : 4
+  Max tokens  : 4
+
+================================================================
+  Workload          : multiturn
+  Requests          : 192
+  Wall time         : 32.96 s
+  Throughput        :   5.82 req/s
+  Gen tok/s         :     23
+  TTFT p50 / p99    :   348 ms /   589 ms
+  Latency p50 / p99 :   677 ms /   819 ms
+  Prompt tokens     : 49266
+  Cache-hit tokens  : 0
+  Cache hit rate    : 0.0%
+================================================================
+
+  Per-turn breakdown:
+    turn   N   prompt_tok    hit_tok   hit_rate   TTFT_p50
+       0   16        2275          0      0.0%      260 ms
+       1   16        2608          0      0.0%      262 ms
+       2   16        2939          0      0.0%      307 ms
+       3   16        3269          0      0.0%      323 ms
+       4   16        3603          0      0.0%      315 ms
+       5   16        3930          0      0.0%      331 ms
+       6   16        4262          0      0.0%      337 ms
+       7   16        4605          0      0.0%      345 ms
+       8   16        4935          0      0.0%      382 ms
+       9   16        5280          0      0.0%      390 ms
+      10   16        5618          0      0.0%      423 ms
+      11   16        5942          0      0.0%      432 ms

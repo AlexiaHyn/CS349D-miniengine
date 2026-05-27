@@ -1,0 +1,52 @@
+=== A.1 chunk=2048 input-len 4096 conc 1/4 (2 chunks/req, expect TTFT within noise) ===
+  Auto-detected model: Qwen/Qwen3-8B
+
+============================================================
+  Serving Benchmark
+  Server       : http://localhost:8000
+  Model        : Qwen/Qwen3-8B
+  Load mode    : closed-loop
+  Requests     : 8 per level
+  Input len    : 4096
+  Output len   : 256
+  Randomness   : 0.5
+  Concurrencies: [1, 4]
+============================================================
+
+  Loading tokenizer...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  Loading WildChat prompts...
+  Loaded 40 candidate prompts
+  Preparing 8 requests...
+  Input lengths:  min=2238, max=3935, mean=3220
+  Output lengths: min=139, max=220, mean=170
+
+  Running concurrency=1 (8 requests, closed-loop)...
+    [  1/8] ok in=3525 out=216 ttft=1833ms compl=16832ms (elapsed 16.8s)
+    [  2/8] ok in=3138 out=139 ttft=1048ms compl=10611ms (elapsed 27.4s)
+    [  3/8] ok in=3935 out=159 ttft=1335ms compl=12445ms (elapsed 39.9s)
+    [  4/8] ok in=3598 out=148 ttft=1232ms compl=11493ms (elapsed 51.4s)
+    [  5/8] ok in=3255 out=220 ttft=1113ms compl=16388ms (elapsed 67.8s)
+    [  6/8] ok in=2835 out=145 ttft=987ms compl=11021ms (elapsed 78.8s)
+    [  7/8] ok in=2238 out=186 ttft=808ms compl=13587ms (elapsed 92.4s)
+    [  8/8] ok in=3235 out=148 ttft=1140ms compl=11400ms (elapsed 103.8s)
+  conc=1      TTFT p50=   1126ms  p99=   1798ms  Compl p50=  11969ms  p99=  16801ms  GenTok/s=     13  ok=8
+
+  Running concurrency=4 (8 requests, closed-loop)...
+    [  1/8] ok in=3138 out=139 ttft=5074ms compl=16277ms (elapsed 16.3s)
+    [  2/8] ok in=3598 out=148 ttft=1266ms compl=18043ms (elapsed 18.0s)
+    [  3/8] ok in=3935 out=159 ttft=5074ms compl=20002ms (elapsed 20.0s)
+    [  4/8] ok in=3525 out=216 ttft=5074ms compl=25362ms (elapsed 25.4s)
+    [  5/8] ok in=2835 out=145 ttft=1069ms compl=14486ms (elapsed 32.5s)
+    [  6/8] ok in=2238 out=186 ttft=892ms compl=16632ms (elapsed 36.6s)
+    [  7/8] ok in=3255 out=220 ttft=1197ms compl=21425ms (elapsed 37.7s)
+    [  8/8] ok in=3235 out=148 ttft=1195ms compl=12689ms (elapsed 38.1s)
+  conc=4      TTFT p50=   1232ms  p99=   5074ms  Compl p50=  17338ms  p99=  25086ms  GenTok/s=     36  ok=8
+
+====================================================================================================
+  Conc   TTFT_p50   TTFT_p99  Compl_p50  Compl_p99   TPOT_p50   TPOT_p99   GenTok/s    OK
+        (ms)       (ms)        (ms)        (ms)        (ms)        (ms)
+----------------------------------------------------------------------------------------------------
+     1       1126       1798      11969      16801       69.8       70.3         13     8
+     4       1232       5074      17338      25086       92.8      112.8         36     8
+====================================================================================================

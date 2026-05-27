@@ -1,0 +1,240 @@
+=== B.4 shared fixed (10x10, prefix 2000, conc 4) CACHE-ON ===
+  Server      : http://localhost:8000
+  Workload    : shared
+  Groups      : 10
+  Qs/group    : 10
+  Prefix len  : ~2000 tokens
+  Question len: ~100 tokens
+  Concurrency : 4
+  Max tokens  : 64
+
+================================================================
+  Workload          : shared
+  Requests          : 100
+  Wall time         : 117.85 s
+  Throughput        :   0.85 req/s
+  Gen tok/s         :     41
+  TTFT p50 / p99    :   167 ms /  3403 ms
+  Latency p50 / p99 :  5083 ms /  7629 ms
+  Prompt tokens     : 242790
+  Cache-hit tokens  : 172576
+  Cache hit rate    : 71.1%
+================================================================
+
+  Per-group breakdown:
+     grp  label                          N   prompt_tok    hit_tok   hit_rate   TTFT_p50
+       0  group_0                        10       24270      13952     57.5%      564 ms
+       1  group_1                        10       24280      16768     69.1%      258 ms
+       2  group_2                        10       24280      18624     76.7%      167 ms
+       3  group_3                        10       24280      18816     77.5%      166 ms
+       4  group_4                        10       24280      17952     73.9%      167 ms
+       5  group_5                        10       24280      17664     72.8%      166 ms
+       6  group_6                        10       24280      17472     72.0%      167 ms
+       7  group_7                        10       24280      18048     74.3%      166 ms
+       8  group_8                        10       24280      17024     70.1%      166 ms
+       9  group_9                        10       24280      16256     67.0%      167 ms
+
+=== B.5 prefix-len sweep CACHE-ON ===
+--- shared-prefix-len=200 ---
+  Server      : http://localhost:8000
+  Workload    : shared
+  Groups      : 8
+  Qs/group    : 8
+  Prefix len  : ~200 tokens
+  Question len: ~100 tokens
+  Concurrency : 4
+  Max tokens  : 64
+
+================================================================
+  Workload          : shared
+  Requests          : 64
+  Wall time         : 23.00 s
+  Throughput        :   2.78 req/s
+  Gen tok/s         :     45
+  TTFT p50 / p99    :   359 ms /   367 ms
+  Latency p50 / p99 :  1438 ms /  1449 ms
+  Prompt tokens     : 22902
+  Cache-hit tokens  : 14336
+  Cache hit rate    : 62.6%
+================================================================
+
+  Per-group breakdown:
+     grp  label                          N   prompt_tok    hit_tok   hit_rate   TTFT_p50
+       0  group_0                         8        2856       1792     62.7%      349 ms
+       1  group_1                         8        2862       1792     62.6%      361 ms
+       2  group_2                         8        2864       1792     62.6%      361 ms
+       3  group_3                         8        2864       1792     62.6%      358 ms
+       4  group_4                         8        2864       1792     62.6%      358 ms
+       5  group_5                         8        2864       1792     62.6%      365 ms
+       6  group_6                         8        2864       1792     62.6%      358 ms
+       7  group_7                         8        2864       1792     62.6%      364 ms
+--- shared-prefix-len=500 ---
+  Server      : http://localhost:8000
+  Workload    : shared
+  Groups      : 8
+  Qs/group    : 8
+  Prefix len  : ~500 tokens
+  Question len: ~100 tokens
+  Concurrency : 4
+  Max tokens  : 64
+
+================================================================
+  Workload          : shared
+  Requests          : 64
+  Wall time         : 26.22 s
+  Throughput        :   2.44 req/s
+  Gen tok/s         :     41
+  TTFT p50 / p99    :   280 ms /   768 ms
+  Latency p50 / p99 :  1527 ms /  2019 ms
+  Prompt tokens     : 44982
+  Cache-hit tokens  : 30208
+  Cache hit rate    : 67.2%
+================================================================
+
+  Per-group breakdown:
+     grp  label                          N   prompt_tok    hit_tok   hit_rate   TTFT_p50
+       0  group_0                         8        5616       3200     57.0%      335 ms
+       1  group_1                         8        5622       3200     56.9%      287 ms
+       2  group_2                         8        5624       3200     56.9%      285 ms
+       3  group_3                         8        5624       3200     56.9%      285 ms
+       4  group_4                         8        5624       3584     63.7%      280 ms
+       5  group_5                         8        5624       4608     81.9%      267 ms
+       6  group_6                         8        5624       4608     81.9%      266 ms
+       7  group_7                         8        5624       4608     81.9%      266 ms
+--- shared-prefix-len=2000 ---
+  Server      : http://localhost:8000
+  Workload    : shared
+  Groups      : 8
+  Qs/group    : 8
+  Prefix len  : ~2000 tokens
+  Question len: ~100 tokens
+  Concurrency : 4
+  Max tokens  : 64
+
+================================================================
+  Workload          : shared
+  Requests          : 64
+  Wall time         : 63.38 s
+  Throughput        :   1.01 req/s
+  Gen tok/s         :     34
+  TTFT p50 / p99    :   258 ms /  2790 ms
+  Latency p50 / p99 :  3086 ms /  7911 ms
+  Prompt tokens     : 155382
+  Cache-hit tokens  : 99584
+  Cache hit rate    : 64.1%
+================================================================
+
+  Per-group breakdown:
+     grp  label                          N   prompt_tok    hit_tok   hit_rate   TTFT_p50
+       0  group_0                         8       19416      11520     59.3%      488 ms
+       1  group_1                         8       19422      11520     59.3%      495 ms
+       2  group_2                         8       19424      11520     59.3%      453 ms
+       3  group_3                         8       19424      13248     68.2%      257 ms
+       4  group_4                         8       19424      13248     68.2%      167 ms
+       5  group_5                         8       19424      13056     67.2%      167 ms
+       6  group_6                         8       19424      14464     74.5%      166 ms
+       7  group_7                         8       19424      11008     56.7%      503 ms
+--- shared-prefix-len=4000 ---
+  Server      : http://localhost:8000
+  Workload    : shared
+  Groups      : 8
+  Qs/group    : 8
+  Prefix len  : ~4000 tokens
+  Question len: ~100 tokens
+  Concurrency : 4
+  Max tokens  : 64
+
+================================================================
+  Workload          : shared
+  Requests          : 64
+  Wall time         : 126.78 s
+  Throughput        :   0.50 req/s
+  Gen tok/s         :     30
+  TTFT p50 / p99    :   770 ms /  5915 ms
+  Latency p50 / p99 :  8679 ms / 12328 ms
+  Prompt tokens     : 303222
+  Cache-hit tokens  : 171648
+  Cache hit rate    : 56.6%
+================================================================
+
+  Per-group breakdown:
+     grp  label                          N   prompt_tok    hit_tok   hit_rate   TTFT_p50
+       0  group_0                         8       37896      25216     66.5%      770 ms
+       1  group_1                         8       37902      21760     57.4%      966 ms
+       2  group_2                         8       37904      32512     85.8%     1017 ms
+       3  group_3                         8       37904      18432     48.6%     1055 ms
+       4  group_4                         8       37904      18432     48.6%     1045 ms
+       5  group_5                         8       37904      18432     48.6%     1044 ms
+       6  group_6                         8       37904      18432     48.6%     1033 ms
+       7  group_7                         8       37904      18432     48.6%     1041 ms
+
+=== B.6 multiturn CACHE-ON ===
+  Server      : http://localhost:8000
+  Workload    : multiturn
+  Sessions    : 16
+  Turns       : 6
+  Concurrency : 4
+  Max tokens  : 64
+
+================================================================
+  Workload          : multiturn
+  Requests          : 96
+  Wall time         : 85.93 s
+  Throughput        :   1.12 req/s
+  Gen tok/s         :     44
+  TTFT p50 / p99    :   157 ms /   260 ms
+  Latency p50 / p99 :  2906 ms /  5291 ms
+  Prompt tokens     : 26229
+  Cache-hit tokens  : 18112
+  Cache hit rate    : 69.1%
+================================================================
+
+  Per-turn breakdown:
+    turn   N   prompt_tok    hit_tok   hit_rate   TTFT_p50
+       0   16        2283          0      0.0%      168 ms
+       1   16        3026       2048     67.7%      155 ms
+       2   16        3910       2720     69.6%      156 ms
+       3   16        4665       3616     77.5%      156 ms
+       4   16        5651       4320     76.4%      157 ms
+       5   16        6694       5408     80.8%      158 ms
+
+=== B.7 default workload CACHE-ON conc 1/4/16 ===
+  Auto-detected model: Qwen/Qwen3-8B
+
+============================================================
+  Serving Benchmark
+  Server       : http://localhost:8000
+  Model        : Qwen/Qwen3-8B
+  Load mode    : closed-loop
+  Requests     : max(conc*2, 8) per concurrency
+  Input len    : 1024
+  Output len   : 256
+  Randomness   : 0.5
+  Concurrencies: [1, 4, 16]
+============================================================
+
+  Loading tokenizer...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  Loading WildChat prompts...
+  Loaded 160 candidate prompts
+  Preparing 32 requests...
+  Input lengths:  min=517, max=1029, mean=759
+  Output lengths: min=129, max=252, mean=186
+
+  Running concurrency=1 (8 requests, closed-loop)...
+    [  1/8] ok in=1029 out=173 ttft=347ms compl=11889ms (elapsed 11.9s)
+    [  2/8] ok in=621 out=204 ttft=260ms compl=13848ms (elapsed 25.7s)
+    [  3/8] ok in=721 out=167 ttft=268ms compl=11396ms (elapsed 37.1s)
+    [  4/8] ok in=896 out=169 ttft=299ms compl=11596ms (elapsed 48.7s)
+    [  5/8] ok in=517 out=210 ttft=247ms compl=14240ms (elapsed 63.0s)
+    [  6/8] ok in=1019 out=132 ttft=345ms compl=9142ms (elapsed 72.1s)
+    [  7/8] ok in=628 out=220 ttft=263ms compl=14916ms (elapsed 87.0s)
+    [  8/8] ok in=835 out=189 ttft=279ms compl=12875ms (elapsed 99.9s)
+  conc=1      TTFT p50=    273ms  p99=    347ms  Compl p50=  12382ms  p99=  14868ms  GenTok/s=     15  ok=8
+
+  Running concurrency=4 (8 requests, closed-loop)...
+    [  1/8] ok in=1029 out=0 ttft=0ms compl=600644ms (elapsed 600.6s)
+    [  2/8] ok in=721 out=0 ttft=0ms compl=600644ms (elapsed 600.6s)
+    [  3/8] ok in=621 out=2 ttft=84ms compl=600644ms (elapsed 600.6s)
+    [  4/8] ok in=896 out=0 ttft=0ms compl=600644ms (elapsed 600.6s)
+DONE

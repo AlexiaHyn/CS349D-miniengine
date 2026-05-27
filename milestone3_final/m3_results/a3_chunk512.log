@@ -1,0 +1,33 @@
+=== A.3 chunk=512 mem0.93 input-len 16384 conc1 (EXPECT SUCCESS) ===
+  Auto-detected model: Qwen/Qwen3-8B
+
+============================================================
+  Serving Benchmark
+  Server       : http://localhost:8000
+  Model        : Qwen/Qwen3-8B
+  Load mode    : closed-loop
+  Requests     : 1 per level
+  Input len    : 16384
+  Output len   : 32
+  Randomness   : 0.5
+  Concurrencies: [1]
+============================================================
+
+  Loading tokenizer...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  Loading WildChat prompts...
+  Loaded 5 candidate prompts
+  Preparing 1 requests...
+  Input lengths:  min=12208, max=12208, mean=12208
+  Output lengths: min=23, max=23, mean=23
+
+  Running concurrency=1 (1 requests, closed-loop)...
+    [  1/1] ok in=12208 out=23 ttft=5959ms compl=7640ms (elapsed 7.6s)
+  conc=1      TTFT p50=   5959ms  p99=   5959ms  Compl p50=   7640ms  p99=   7640ms  GenTok/s=      3  ok=1
+
+====================================================================================================
+  Conc   TTFT_p50   TTFT_p99  Compl_p50  Compl_p99   TPOT_p50   TPOT_p99   GenTok/s    OK
+        (ms)       (ms)        (ms)        (ms)        (ms)        (ms)
+----------------------------------------------------------------------------------------------------
+     1       5959       5959       7640       7640       76.4       76.4          3     1
+====================================================================================================

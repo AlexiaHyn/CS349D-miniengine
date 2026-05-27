@@ -1,0 +1,64 @@
+=== B.4-strong shared prefix4000 maxtok16 conc4 CACHE-OFF ===
+  Server      : http://localhost:8000
+  Workload    : shared
+  Groups      : 8
+  Qs/group    : 10
+  Prefix len  : ~4000 tokens
+  Question len: ~50 tokens
+  Concurrency : 4
+  Max tokens  : 16
+
+================================================================
+  Workload          : shared
+  Requests          : 80
+  Wall time         : 164.28 s
+  Throughput        :   0.49 req/s
+  Gen tok/s         :      8
+  TTFT p50 / p99    :  6938 ms /  7022 ms
+  Latency p50 / p99 :  8235 ms /  8302 ms
+  Prompt tokens     : 374230
+  Cache-hit tokens  : 0
+  Cache hit rate    : 0.0%
+================================================================
+
+  Per-group breakdown:
+     grp  label                          N   prompt_tok    hit_tok   hit_rate   TTFT_p50
+       0  group_0                        10       46770          0      0.0%     6814 ms
+       1  group_1                        10       46780          0      0.0%     6979 ms
+       2  group_2                        10       46780          0      0.0%     6994 ms
+       3  group_3                        10       46780          0      0.0%     6957 ms
+       4  group_4                        10       46780          0      0.0%     6905 ms
+       5  group_5                        10       46780          0      0.0%     6943 ms
+       6  group_6                        10       46780          0      0.0%     6928 ms
+       7  group_7                        10       46780          0      0.0%     6981 ms
+
+=== B.6-strong multiturn maxtok 32 turns 6 CACHE-OFF ===
+  Server      : http://localhost:8000
+  Workload    : multiturn
+  Sessions    : 12
+  Turns       : 6
+  Concurrency : 4
+  Max tokens  : 32
+
+================================================================
+  Workload          : multiturn
+  Requests          : 72
+  Wall time         : 50.43 s
+  Throughput        :   1.43 req/s
+  Gen tok/s         :     39
+  TTFT p50 / p99    :   215 ms /   371 ms
+  Latency p50 / p99 :  2762 ms /  3255 ms
+  Prompt tokens     : 17975
+  Cache-hit tokens  : 0
+  Cache hit rate    : 0.0%
+================================================================
+
+  Per-turn breakdown:
+    turn   N   prompt_tok    hit_tok   hit_rate   TTFT_p50
+       0   12        1705          0      0.0%      166 ms
+       1   12        2235          0      0.0%      176 ms
+       2   12        2739          0      0.0%      187 ms
+       3   12        3238          0      0.0%      218 ms
+       4   12        3757          0      0.0%      231 ms
+       5   12        4301          0      0.0%      236 ms
+DONE
