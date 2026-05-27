@@ -224,15 +224,18 @@ class Scheduler:
                 req.status = RequestStatus.RUNNING
             try:
                 token_ids = self.engine.paged_batched_prefill(to_prefill)
-            except RuntimeError:
+            except RuntimeError as _prefill_err:
                 # Pool exhausted despite the admission estimate (e.g.
                 # eviction couldn't free enough because pages are pinned
                 # by other in-flight requests).  Roll the whole batch back
                 # to the waiting queue rather than leaving half-built
                 # state in `running`; they retry next step.
-                logger.warning(
-                    "paged prefill OOM for batch of %d; returning to waiting queue",
-                    len(to_prefill),
+                #
+                # Use logger.exception so the FULL traceback is printed —
+                # the plain warning message above hid the real error type.
+                logger.exception(
+                    "paged prefill failed (batch=%d): %s",
+                    len(to_prefill), _prefill_err,
                 )
                 for req in to_prefill:
                     self.engine.free_paged_state(req)
