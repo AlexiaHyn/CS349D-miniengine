@@ -90,6 +90,9 @@ class Engine:
         flashinfer_workspace_mb: int = 128,
         prefill_chunk_size: int = 0,
         disable_radix_cache: bool = False,
+        # ── Milestone-4 Track 2: speculative decoding ──────────────────
+        speculative_draft_model: str = "",
+        speculative_num_draft_tokens: int = 5,
     ):
         if cuda_graph and mode != "paged":
             raise ValueError("cuda_graph requires mode='paged'")
@@ -297,6 +300,40 @@ class Engine:
                 max_seqlen_k=max_position,
             )
             self.graph_runner.capture_all()
+
+        # ── Milestone-4 Track 2: speculative decoding draft model ──────
+        # The draft is a small same-tokenizer model (e.g. Qwen3-0.6B).
+        # It keeps its OWN contiguous KV cache (the baseline kv_cache
+        # path) — the assignment explicitly allows this for the tiny
+        # draft, and it makes rollback a simple tensor truncate rather
+        # than paged page-table surgery.  The target keeps using the
+        # paged pool for everything.
+        self.speculative_num_draft_tokens = speculative_num_draft_tokens
+        self.draft_model: CausalLM | None = None
+        self.draft_config: ModelConfig | None = None
+        if speculative_draft_model:
+            if mode != "paged":
+                raise ValueError("speculative decoding requires --mode paged")
+            logger.info("Loading draft model %s …", speculative_draft_model)
+            self.draft_config = ModelConfig.from_pretrained(speculative_draft_model)
+            if self.draft_config.vocab_size != config.vocab_size:
+                raise ValueError(
+                    "draft/target vocab size mismatch "
+                    f"({self.draft_config.vocab_size} vs {config.vocab_size}); "
+                    "speculative decoding requires a shared vocabulary"
+                )
+            with torch.device("meta"):
+                self.draft_model = CausalLM(self.draft_config)
+            load_weights(
+                self.draft_model, speculative_draft_model, dtype=dtype, device=device
+            )
+            self.draft_model.eval()
+            logger.info(
+                "Speculative decoding enabled — draft=%s, K=%d, draft_params=%dM",
+                speculative_draft_model,
+                speculative_num_draft_tokens,
+                sum(p.numel() for p in self.draft_model.parameters()) // 1_000_000,
+            )
 
         logger.info(
             "Engine ready  —  mode=%s, backend=%s, compile=%s, graph=%s, "
@@ -1124,6 +1161,130 @@ class Engine:
                 sample_token(logits[i : i + 1], r.sampling_params, r.output_ids)
             )
         return out
+
+    # ── Milestone-4 Track 2: speculative decoding ──────────────────────
+
+    @torch.inference_mode()
+    def target_verify(
+        self, request: Request, candidate_ids: list[int]
+    ) -> torch.Tensor:
+        """Run ONE target forward over ``candidate_ids`` and return logits.
+
+        ``candidate_ids`` = ``[last_accepted_token, draft_1, …, draft_K]``
+        — i.e. ``K+1`` query tokens.  They are appended to the request's
+        existing paged KV starting at ``cache_seq_len`` and attend the
+        full history causally, so ``logits[i]`` is the target model's
+        next-token distribution *given the first i+1 candidates*.  That's
+        exactly what greedy verification needs:
+
+            logits[0]  → target's token after last_accepted   (verifies draft_1)
+            logits[1]  → target's token after draft_1         (verifies draft_2)
+            …
+            logits[K]  → target's token after draft_K         (the bonus token)
+
+        The KV for all ``K+1`` positions IS written into the pool, but we
+        do NOT advance ``cache_seq_len`` here — the caller decides how
+        many candidates were accepted and advances it by exactly that
+        many (plus the bonus token).  Rejected positions' KV is simply
+        overwritten on the next verify, since they sit at offsets
+        ``>= cache_seq_len``.
+
+        Returns ``(K+1, vocab)`` logits on GPU.
+        """
+        assert self.pool is not None
+        s = self._state(request)
+        q = len(candidate_ids)
+        start = s.cache_seq_len
+        new_len = start + q
+
+        # Grow the page table to cover the K+1 candidate slots.
+        need = self.pool.pages_needed(new_len)
+        if need > len(s.page_table):
+            s.page_table.extend(self.pool.allocate(need - len(s.page_table)))
+
+        flat_ids = _to_long(candidate_ids, self.device).unsqueeze(0)
+        flat_pos = _to_long(list(range(start, new_len)), self.device).unsqueeze(0)
+        # We need a logit at EVERY candidate position, not just the last.
+        logits_indices = torch.arange(q, dtype=torch.long, device=self.device)
+
+        # Reuse the chunked-prefill metadata builders: q new tokens at
+        # offset ``start`` attending full KV [0, start+q).
+        sub_states = [s]
+        sub_q_lens = [q]
+        sub_k_lens = [new_len]
+        sub_start_offsets = [start]
+        if self.attention_backend == "flashinfer":
+            backend_kwargs = self._fi_kwargs_chunked_prefill(
+                sub_states, sub_q_lens, sub_k_lens, sub_start_offsets
+            )
+        else:
+            sub_cu_q = _cu_seqlens(sub_q_lens, self.device)
+            backend_kwargs = self._fa_kwargs_chunked_prefill(
+                sub_states, sub_q_lens, sub_k_lens, sub_cu_q, sub_start_offsets
+            )
+
+        logits, _ = self.model(
+            flat_ids,
+            flat_pos,
+            kv_pool_caches=self._kv_pool_caches,
+            logits_indices=logits_indices,
+            **backend_kwargs,
+        )
+        # logits: (1, q, vocab) → (q, vocab)
+        return logits[0]
+
+    def advance_target_seq(self, request: Request, n: int) -> None:
+        """Commit ``n`` accepted tokens into the target's paged KV length."""
+        self._state(request).cache_seq_len += n
+
+    @torch.inference_mode()
+    def draft_prefill(self, request: Request) -> torch.Tensor:
+        """Prefill the draft model over the request's full prompt.
+
+        Builds the draft's own contiguous KV cache (stored on
+        ``request.draft_kv``) and returns the logits at the last prompt
+        position so the orchestrator can produce the first draft token.
+        Returns ``(vocab,)`` logits on GPU.
+        """
+        assert self.draft_model is not None
+        ids = _to_long(request.input_ids, self.device).unsqueeze(0)
+        pos = torch.arange(
+            len(request.input_ids), device=self.device
+        ).unsqueeze(0)
+        logits, kv = self.draft_model(ids, pos, kv_caches=None)
+        request.draft_kv = kv
+        return logits[0, -1]
+
+    @torch.inference_mode()
+    def draft_decode(
+        self, request: Request, token_id: int, position: int
+    ) -> torch.Tensor:
+        """One draft-model decode step.
+
+        Feeds ``token_id`` at ``position`` through the draft model using
+        its contiguous KV (``request.draft_kv``), updates that cache, and
+        returns ``(vocab,)`` logits.
+        """
+        assert self.draft_model is not None
+        ids = _to_long([token_id], self.device).unsqueeze(0)
+        pos = _to_long([position], self.device).unsqueeze(0)
+        logits, kv = self.draft_model(ids, pos, kv_caches=request.draft_kv)
+        request.draft_kv = kv
+        return logits[0, -1]
+
+    def rollback_draft_kv(self, request: Request, keep_len: int) -> None:
+        """Truncate the draft's contiguous KV to ``keep_len`` tokens.
+
+        After a verify step we accept some prefix; the draft KV must be
+        rewound so the next draft phase continues from the accepted
+        position.  Contiguous cache → a plain slice along the seq dim.
+        """
+        kv = request.draft_kv
+        if kv is None:
+            return
+        request.draft_kv = [
+            (k[:, :, :keep_len, :], v[:, :, :keep_len, :]) for (k, v) in kv
+        ]
 
     def _paged_decode_eager(
         self, requests: list[Request], states: list[_PagedState]

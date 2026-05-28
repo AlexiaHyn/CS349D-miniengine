@@ -57,6 +57,10 @@ class Request:
     # Per-request KV cache (set by Engine during prefill, updated on each decode)
     kv_cache: Any = None
 
+    # Milestone-4 Track 2: the draft model's own contiguous KV cache,
+    # used only on the speculative-decoding path.  None otherwise.
+    draft_kv: Any = None
+
     # Streaming output channel — scheduler pushes, server consumes
     token_queue: queue.Queue = field(default_factory=queue.Queue)
 

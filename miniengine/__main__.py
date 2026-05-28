@@ -156,6 +156,21 @@ def parse_args() -> argparse.Namespace:
         "Useful for measuring the cache's contribution on workloads "
         "with shared prompt prefixes (RAG, multi-turn chat).",
     )
+
+    # ── Milestone-4 Track 2: speculative decoding ──────────────────────
+    p.add_argument(
+        "--speculative-draft-model",
+        type=str,
+        default="",
+        help="HF id of the draft model (e.g. Qwen/Qwen3-0.6B).  Must share "
+        "the target's tokenizer/vocab.  Empty disables speculative decoding.",
+    )
+    p.add_argument(
+        "--speculative-num-draft-tokens",
+        type=int,
+        default=5,
+        help="paged: tokens K drafted per target verification (typical 3-7).",
+    )
     return p.parse_args()
 
 
@@ -201,6 +216,8 @@ def main() -> None:
         flashinfer_workspace_mb=args.flashinfer_workspace_mb,
         prefill_chunk_size=args.prefill_chunk_size,
         disable_radix_cache=args.disable_radix_cache,
+        speculative_draft_model=args.speculative_draft_model,
+        speculative_num_draft_tokens=args.speculative_num_draft_tokens,
     )
     sched = Scheduler(engine=engine, max_running=args.max_running, mode=args.mode)
 

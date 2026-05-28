@@ -48,6 +48,16 @@ class Scheduler:
         self.max_running = max_running
         self.mode = mode
 
+        # Milestone-4 Track 2: speculative decoding.  When a draft model is
+        # loaded we serve via the SpeculativeDecoder (greedy, conc=1
+        # oriented) regardless of the requested batched mode.
+        self.spec = None
+        if getattr(engine, "draft_model", None) is not None:
+            from miniengine.spec_decode import SpeculativeDecoder
+
+            self.spec = SpeculativeDecoder(engine)
+            logger.info("Scheduler: speculative decoding path active")
+
         # Queues
         self.waiting: deque[Request] = deque()
         self.running: list[Request] = []
@@ -109,6 +119,8 @@ class Scheduler:
 
         Returns list of requests that finished in this step.
         """
+        if self.spec is not None:
+            return self._step_spec()
         if self.mode == "baseline":
             return self._step_baseline()
         if self.mode == "paged":
@@ -133,6 +145,53 @@ class Scheduler:
             token_id = self.engine.decode_step(req)
             req.output_ids.append(token_id)
             self._stream_token(req, token_id)
+
+        self._finish_request(req, finished)
+        return finished
+
+    def _step_spec(self) -> list[Request]:
+        """Speculative decoding step (Milestone 4 Track 2).
+
+        Conc=1 oriented: take one waiting request, prefill both models,
+        then run speculative rounds to completion, streaming each accepted
+        token as it lands.  Keeping it one-at-a-time sidesteps the ragged
+        batched-decode problem (different accept lengths per request) — the
+        milestone's accept-length / TPOT targets are all at conc 1.
+        """
+        finished: list[Request] = []
+
+        with self._lock:
+            if not self.waiting:
+                return finished
+            req = self.waiting.popleft()
+
+        assert self.spec is not None
+        req.status = RequestStatus.RUNNING
+
+        # Prefill target (paged) + draft (contiguous); emit first token.
+        first = self.spec.prefill(req)
+        req.output_ids.append(first)
+        self._stream_token(req, first)
+        if self._check_finished(req, first):
+            self._finish_request(req, finished)
+            return finished
+
+        # Speculative rounds until stop / max length.
+        max_new = req.sampling_params.max_new_tokens
+        done = False
+        while not done:
+            new_tokens = self.spec.step(req)
+            for token_id in new_tokens:
+                # A round can return up to K+1 tokens; stop exactly at the
+                # token budget rather than overshooting by the draft width.
+                if req.num_output_tokens >= max_new:
+                    done = True
+                    break
+                req.output_ids.append(token_id)
+                self._stream_token(req, token_id)
+                if self.engine.is_stop_token(token_id):
+                    done = True
+                    break
 
         self._finish_request(req, finished)
         return finished

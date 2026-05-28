@@ -91,6 +91,20 @@ async def cache_stats():
     }
 
 
+@app.get("/spec_stats")
+async def spec_stats():
+    """Snapshot of speculative-decoding instrumentation (Milestone 4 T2).
+
+    Returns ``{"enabled": False}`` when no draft model is loaded.  The key
+    metrics: ``mean_accept_length`` (bar > 2.0 at conc 1) and
+    ``target_forwards_per_token`` (1.0 for plain decode, lower with spec).
+    """
+    spec = getattr(scheduler, "spec", None) if scheduler else None
+    if spec is None:
+        return {"enabled": False}
+    return {"enabled": True, "k": spec.k, **spec.stats.as_dict()}
+
+
 @app.get("/v1/models")
 async def list_models():
     return {
