@@ -229,12 +229,23 @@ class SpeculativeDecoder:
         keep_len = cache_len + n_accept + 1
         engine.advance_target_seq(request, len(accepted))  # = n_accept + 1
 
-        # Draft KV: the draft wrote KV for last_token + draft_1..K at
-        # positions [cache_len, cache_len+K).  Positions on the committed
-        # path are [0, cache_len+n_accept+1) (last_token + the n_accept
-        # accepted drafts).  Truncate to that so the draft KV length tracks
-        # the target's exactly; the bonus token's draft KV is (re)computed
-        # as the seed of the next round.
+        # Draft KV: the K decode steps wrote KV for last_token + draft_1..K-1
+        # at positions [cache_len, cache_len+K).  Two cases:
+        #   - mismatch at i (i<K): committed path is [0, cache_len+n_accept+1)
+        #     (last_token + the n_accept accepted drafts).  Truncate to
+        #     keep_len; draft_kv_len becomes cache_len+n_accept+1 == new
+        #     target cache_seq_len.  Invariant holds.
+        #   - all K accepted: target advanced by K+1 (K drafts + bonus), but
+        #     the draft loop only wrote KV up to cache_len+K (position of
+        #     draft_K-1).  We need one more draft step to add KV for
+        #     draft_K (which target accepted) so draft_kv_len reaches
+        #     cache_len+K+1 == new target cache_seq_len.
+        if n_accept == k:
+            # last accepted draft_K still has no draft KV — fill it now so
+            # the round-end invariant draft_kv_len == target cache_seq_len
+            # holds for the next step.
+            _ = engine.draft_decode(request, draft_tokens[-1], cache_len + k)
+            self.stats.draft_forwards += 1
         engine.rollback_draft_kv(request, keep_len)
 
         return accepted
