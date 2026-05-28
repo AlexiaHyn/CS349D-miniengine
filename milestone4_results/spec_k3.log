@@ -1,0 +1,38 @@
+
+============================================================
+  Serving Benchmark
+  Server       : http://localhost:8000
+  Model        : Qwen/Qwen3-8B
+  Load mode    : closed-loop
+  Requests     : 8 per level
+  Input len    : 1024
+  Output len   : 256
+  Randomness   : 0.5
+  Concurrencies: [1]
+============================================================
+
+  Loading tokenizer...
+  Loading WildChat prompts...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  Loaded 40 candidate prompts
+  Preparing 8 requests...
+  Input lengths:  min=558, max=985, mean=809
+  Output lengths: min=139, max=220, mean=170
+
+  Running concurrency=1 (8 requests, closed-loop)...
+    [  1/8] ok in=885 out=216 ttft=413ms compl=17976ms (elapsed 18.0s)
+    [  2/8] ok in=788 out=139 ttft=390ms compl=10353ms (elapsed 28.3s)
+    [  3/8] ok in=985 out=159 ttft=130ms compl=12943ms (elapsed 41.3s)
+    [  4/8] ok in=908 out=148 ttft=458ms compl=10917ms (elapsed 52.2s)
+    [  5/8] ok in=815 out=176 ttft=398ms compl=13107ms (elapsed 65.3s)
+    [  6/8] ok in=715 out=96 ttft=368ms compl=8806ms (elapsed 74.1s)
+    [  7/8] ok in=558 out=186 ttft=334ms compl=17086ms (elapsed 91.2s)
+    [  8/8] ok in=815 out=148 ttft=404ms compl=10204ms (elapsed 101.4s)
+  conc=1      TTFT p50=    394ms  p99=    455ms  Compl p50=  11930ms  p99=  17914ms  GenTok/s=     13  ok=8
+
+====================================================================================================
+  Conc   TTFT_p50   TTFT_p99  Compl_p50  Compl_p99   TPOT_p50   TPOT_p99   GenTok/s    OK
+        (ms)       (ms)        (ms)        (ms)        (ms)        (ms)
+----------------------------------------------------------------------------------------------------
+     1        394        455      11930      17914       76.9       90.4         13     8
+====================================================================================================

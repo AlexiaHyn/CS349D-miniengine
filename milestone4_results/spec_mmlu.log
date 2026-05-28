@@ -1,0 +1,59 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+
+============================================================
+  Accuracy Benchmark
+  Dataset     : mmlu
+  Samples     : 200
+  Max tokens  : 32
+  Concurrency : 8
+  Server      : http://localhost:8000
+============================================================
+
+Loading dataset...
+  Loaded 200 samples
+
+Running evaluation...
+  [10/200] accuracy=60.0%  latency=8.5s
+  [20/200] accuracy=50.0%  latency=13.9s
+  [30/200] accuracy=53.3%  latency=8.0s
+  [40/200] accuracy=57.5%  latency=14.2s
+  [50/200] accuracy=56.0%  latency=3.3s
+  [60/200] accuracy=58.3%  latency=8.6s
+  [70/200] accuracy=60.0%  latency=9.1s
+  [80/200] accuracy=60.0%  latency=10.4s
+  [90/200] accuracy=57.8%  latency=8.9s
+  [100/200] accuracy=60.0%  latency=11.4s
+  [110/200] accuracy=57.3%  latency=13.3s
+  [120/200] accuracy=57.5%  latency=4.6s
+  [130/200] accuracy=57.7%  latency=14.3s
+  [140/200] accuracy=58.6%  latency=10.0s
+  [150/200] accuracy=58.0%  latency=17.9s
+  [160/200] accuracy=58.1%  latency=15.8s
+  [170/200] accuracy=58.8%  latency=3.0s
+  [180/200] accuracy=60.6%  latency=6.4s
+  [190/200] accuracy=61.1%  latency=14.4s
+  [200/200] accuracy=61.5%  latency=5.3s
+
+============================================================
+  MMLU Accuracy Report
+  Samples    : 200
+  Correct    : 123
+  Accuracy   : 61.5%
+  Avg latency: 9.96s
+============================================================
+
+  Sample incorrect predictions (5 of 77):
+    Gold=1  Pred=2  Output: C. left submandibular lymph node....
+    Gold=0  Pred=None  Output: To solve this, we need to recall the energy levels of positronium.
+
+Positronium ...
+    Gold=2  Pred=1  Output: **B. the seller held the legal title to the farm.**
+
+### Explanation:
+- The agre...
+    Gold=1  Pred=2  Output: C...
+    Gold=0  Pred=2  Output: **C. Not wrong, Wrong**
+
+### Explanation:
+
+- **Scenario 1**: Drying fine china i...
