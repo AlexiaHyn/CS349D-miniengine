@@ -1237,21 +1237,53 @@ class Engine:
         """Commit ``n`` accepted tokens into the target's paged KV length."""
         self._state(request).cache_seq_len += n
 
+    # ── Draft KV buffer management (in-place, no per-step torch.cat) ──
+    #
+    # ``request.draft_kv`` is a dict:
+    #   {"bufs": list[(K_buf, V_buf)] per layer, "len": int}
+    # Each buffer has shape (1, num_kv_heads, max_seqlen, head_dim) and is
+    # allocated once at draft_prefill; subsequent draft_decode steps write
+    # in-place at slot ``len`` and bump ``len`` by 1.  The attention layer
+    # reads K_buf[:, :, :len+seq, :].
+
+    def _alloc_draft_kv_bufs(self, prompt_len: int) -> dict:
+        """Allocate per-layer (K_buf, V_buf) of shape (1, kv_heads, max, dim)."""
+        assert self.draft_model is not None
+        cfg = self.draft_config
+        max_seqlen = max(prompt_len + 1024, 2048)  # prompt + decode headroom
+        bufs = []
+        for _ in range(cfg.num_hidden_layers):
+            K = torch.empty(
+                (1, cfg.num_key_value_heads, max_seqlen, cfg.head_dim),
+                dtype=torch.bfloat16, device=self.device,
+            )
+            V = torch.empty(
+                (1, cfg.num_key_value_heads, max_seqlen, cfg.head_dim),
+                dtype=torch.bfloat16, device=self.device,
+            )
+            bufs.append((K, V))
+        return {"bufs": bufs, "len": 0, "max": max_seqlen}
+
     @torch.inference_mode()
     def draft_prefill(self, request: Request) -> torch.Tensor:
         """Prefill the draft model over the request's full prompt.
 
-        Builds the draft's own contiguous KV cache (stored on
-        ``request.draft_kv``) and returns the logits at the last prompt
-        position so the orchestrator can produce the first draft token.
-        Returns ``(vocab,)`` logits on GPU.
+        Allocates the per-layer in-place K/V buffers (sized for prompt +
+        decode headroom) and writes the prompt's KV at positions
+        [0, prompt_len).  Returns last-position logits.
         """
         assert self.draft_model is not None
+        prompt_len = len(request.input_ids)
+        kv = self._alloc_draft_kv_bufs(prompt_len)
         ids = _to_long(request.input_ids, self.device).unsqueeze(0)
-        pos = torch.arange(
-            len(request.input_ids), device=self.device
-        ).unsqueeze(0)
-        logits, kv = self.draft_model(ids, pos, kv_caches=None)
+        pos = torch.arange(prompt_len, device=self.device).unsqueeze(0)
+        # kv_buf_pos=0, kv_buf_len=0 -> writes prompt's KV at [0, prompt_len)
+        # and attention sees [0, prompt_len) -- prefill with causal mask.
+        logits, _ = self.draft_model(
+            ids, pos,
+            kv_bufs=kv["bufs"], kv_buf_pos=0, kv_buf_len=0,
+        )
+        kv["len"] = prompt_len
         request.draft_kv = kv
         return logits[0, -1]
 
@@ -1259,32 +1291,41 @@ class Engine:
     def draft_decode(
         self, request: Request, token_id: int, position: int
     ) -> torch.Tensor:
-        """One draft-model decode step.
+        """One draft decode step, writing the new K/V in-place at slot ``len``.
 
-        Feeds ``token_id`` at ``position`` through the draft model using
-        its contiguous KV (``request.draft_kv``), updates that cache, and
-        returns ``(vocab,)`` logits.
+        Avoids the per-step torch.cat that dominated the old dense path
+        (~2 MB alloc + copy per layer × 28 layers on Qwen3-0.6B = the
+        majority of the 36 ms/step we measured).
         """
         assert self.draft_model is not None
+        kv = request.draft_kv
+        assert kv is not None and "bufs" in kv, "draft_prefill must run first"
+        assert position == kv["len"], (
+            f"draft_decode position {position} != buffer len {kv['len']}"
+        )
+        if kv["len"] + 1 > kv["max"]:
+            raise RuntimeError(
+                f"draft KV buffer overflow: len={kv['len']} max={kv['max']}"
+            )
         ids = _to_long([token_id], self.device).unsqueeze(0)
         pos = _to_long([position], self.device).unsqueeze(0)
-        logits, kv = self.draft_model(ids, pos, kv_caches=request.draft_kv)
-        request.draft_kv = kv
+        logits, _ = self.draft_model(
+            ids, pos,
+            kv_bufs=kv["bufs"], kv_buf_pos=kv["len"], kv_buf_len=kv["len"],
+        )
+        kv["len"] += 1
         return logits[0, -1]
 
     def rollback_draft_kv(self, request: Request, keep_len: int) -> None:
-        """Truncate the draft's contiguous KV to ``keep_len`` tokens.
+        """Rewind the draft KV length to ``keep_len`` (in-place: no copy).
 
-        After a verify step we accept some prefix; the draft KV must be
-        rewound so the next draft phase continues from the accepted
-        position.  Contiguous cache → a plain slice along the seq dim.
+        The buffer data past ``keep_len`` becomes garbage — overwritten by
+        the next draft_decode that writes at slot ``keep_len``.
         """
         kv = request.draft_kv
         if kv is None:
             return
-        request.draft_kv = [
-            (k[:, :, :keep_len, :], v[:, :, :keep_len, :]) for (k, v) in kv
-        ]
+        kv["len"] = keep_len
 
     def _paged_decode_eager(
         self, requests: list[Request], states: list[_PagedState]

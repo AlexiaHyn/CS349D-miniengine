@@ -254,4 +254,8 @@ class SpeculativeDecoder:
         kv = request.draft_kv
         if not kv:
             return 0
+        # Milestone-4 in-place buffer: dict with explicit "len"
+        if isinstance(kv, dict):
+            return kv.get("len", 0)
+        # Legacy list-of-(k,v) shape, kept for safety
         return kv[0][0].shape[2]

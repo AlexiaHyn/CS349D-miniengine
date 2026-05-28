@@ -271,6 +271,14 @@ class Attention(nn.Module):
         block_table: torch.Tensor | None = None,
         # flashinfer paged path (single bundled context, see engine.py)
         fi_ctx: "FlashInferContext | None" = None,
+        # ── in-place dense-KV buffer (Milestone 4 Track 2 draft path) ──
+        # When ``kv_buf`` is provided we do NOT torch.cat each step; instead
+        # the new K/V are scattered into the pre-allocated (K_buf, V_buf)
+        # at slot ``kv_buf_pos``, and attention reads K_buf[:, :, :kv_buf_len].
+        # ``new_kv`` is returned as None — buffer ownership lives outside.
+        kv_buf: tuple[torch.Tensor, torch.Tensor] | None = None,
+        kv_buf_pos: int = 0,
+        kv_buf_len: int = 0,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
         """
         Args:
@@ -374,11 +382,27 @@ class Attention(nn.Module):
                 )  # (T, num_heads, head_dim)
             return self.o_proj(out.reshape(1, T, -1)), None
 
-        # Append to KV cache
-        if kv_cache is not None:
-            k = torch.cat([kv_cache[0], k], dim=2)
-            v = torch.cat([kv_cache[1], v], dim=2)
-        new_kv = (k, v)
+        # KV update: prefer in-place buffer (no per-step torch.cat) when
+        # the caller provides (K_buf, V_buf, pos, len).  Else fall back to
+        # the cat-and-grow path (legacy dense / batched modes).
+        if kv_buf is not None:
+            K_buf, V_buf = kv_buf
+            # k, v are (1, num_kv_heads, seq_len, head_dim); buffer shapes
+            # match.  Write the seq_len new tokens at positions [pos, pos+seq_len).
+            end = kv_buf_pos + seq_len
+            K_buf[:, :, kv_buf_pos:end, :].copy_(k)
+            V_buf[:, :, kv_buf_pos:end, :].copy_(v)
+            # Attention sees the full prefix up to (kv_buf_len + seq_len).
+            kv_len_total = kv_buf_len + seq_len
+            k = K_buf[:, :, :kv_len_total, :]
+            v = V_buf[:, :, :kv_len_total, :]
+            new_kv = None  # external buffer ownership
+        else:
+            # Legacy path: append to cached (k, v) by cat (O(n) per step).
+            if kv_cache is not None:
+                k = torch.cat([kv_cache[0], k], dim=2)
+                v = torch.cat([kv_cache[1], v], dim=2)
+            new_kv = (k, v)
 
         # GQA: expand KV heads to match Q heads
         if self.num_kv_groups > 1:
@@ -388,11 +412,22 @@ class Attention(nn.Module):
             v = v.reshape(bsz, self.num_heads, -1, self.head_dim)
 
         # Batched decode passes an explicit float mask; otherwise fall
-        # back to the is_causal kernel path.
+        # back to the is_causal kernel path.  With an in-place kv_buf we
+        # are doing decode (seq_len == 1 typically): no causal mask needed
+        # since q attends a full prefix.
         if attention_mask is not None:
             out = F.scaled_dot_product_attention(q, k, v, attn_mask=attention_mask)
         else:
-            is_causal = kv_cache is None and seq_len > 1
+            # is_causal True iff q_len > 1 AND we're computing attention
+            # over the whole-prefix kv (i.e. there is no existing cache that
+            # extends q's history).  decode (seq_len==1) attends a full
+            # prefix non-causally.  Prefill (kv_cache None, kv_buf empty
+            # before this write OR set with kv_buf_len==0) is causal.
+            is_causal = (
+                (kv_cache is None)
+                and (kv_buf is None or kv_buf_len == 0)
+                and seq_len > 1
+            )
             out = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
 
         # Merge heads → project back
@@ -493,6 +528,10 @@ class TransformerModel(nn.Module):
         block_table: torch.Tensor | None = None,
         # flashinfer paged metadata (single bundled context)
         fi_ctx: FlashInferContext | None = None,
+        # ── in-place dense-KV buffer (Milestone 4 Track 2 draft) ───────
+        kv_bufs: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
+        kv_buf_pos: int = 0,
+        kv_buf_len: int = 0,
     ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor] | None]]:
         """
         Args:
@@ -527,6 +566,7 @@ class TransformerModel(nn.Module):
         for i, layer in enumerate(self.layers):
             kv = kv_caches[i] if kv_caches is not None else None
             pool = kv_pool_caches[i] if kv_pool_caches is not None else None
+            kv_buf = kv_bufs[i] if kv_bufs is not None else None
             hidden, new_kv = layer(
                 hidden,
                 cos,
@@ -541,6 +581,9 @@ class TransformerModel(nn.Module):
                 max_seqlen_k=max_seqlen_k,
                 block_table=block_table,
                 fi_ctx=fi_ctx,
+                kv_buf=kv_buf,
+                kv_buf_pos=kv_buf_pos,
+                kv_buf_len=kv_buf_len,
             )
             new_kv_caches.append(new_kv)
 
