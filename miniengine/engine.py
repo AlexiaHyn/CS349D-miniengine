@@ -1266,23 +1266,34 @@ class Engine:
 
     @torch.inference_mode()
     def draft_prefill(self, request: Request) -> torch.Tensor:
-        """Prefill the draft model over the request's full prompt.
+        """Prefill the draft model and seed an in-place KV buffer.
 
-        Allocates the per-layer in-place K/V buffers (sized for prompt +
-        decode headroom) and writes the prompt's KV at positions
-        [0, prompt_len).  Returns last-position logits.
+        Runs the prompt through the legacy cat-based dense path (one-shot,
+        amortized over the entire request), then copies the resulting per-layer
+        (K, V) into a pre-allocated in-place buffer so subsequent
+        ``draft_decode`` steps avoid the per-step ``torch.cat``.
+
+        The Milestone-4 perf win is on the decode path (one step per token);
+        running the prefill through the in-place path triggered an
+        ``AssertionError`` in the GQA / view interaction (see
+        ``milestone4_results/RESUME.md``), so we keep prefill on the safe
+        legacy path here.
         """
         assert self.draft_model is not None
         prompt_len = len(request.input_ids)
-        kv = self._alloc_draft_kv_bufs(prompt_len)
         ids = _to_long(request.input_ids, self.device).unsqueeze(0)
         pos = torch.arange(prompt_len, device=self.device).unsqueeze(0)
-        # kv_buf_pos=0, kv_buf_len=0 -> writes prompt's KV at [0, prompt_len)
-        # and attention sees [0, prompt_len) -- prefill with causal mask.
-        logits, _ = self.draft_model(
-            ids, pos,
-            kv_bufs=kv["bufs"], kv_buf_pos=0, kv_buf_len=0,
-        )
+
+        # Legacy dense prefill: returns list[(k, v)] of shape
+        # (1, num_kv_heads, prompt_len, head_dim).  Runs once per request.
+        logits, kv_list = self.draft_model(ids, pos, kv_caches=None)
+
+        # Seed the in-place buffer so the hot loop (draft_decode) can do
+        # index-writes instead of cat-and-grow.
+        kv = self._alloc_draft_kv_bufs(prompt_len)
+        for i, (k, v) in enumerate(kv_list):
+            kv["bufs"][i][0][:, :, :prompt_len, :].copy_(k)
+            kv["bufs"][i][1][:, :, :prompt_len, :].copy_(v)
         kv["len"] = prompt_len
         request.draft_kv = kv
         return logits[0, -1]
