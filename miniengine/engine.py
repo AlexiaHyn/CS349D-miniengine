@@ -1247,7 +1247,13 @@ class Engine:
     # reads K_buf[:, :, :len+seq, :].
 
     def _alloc_draft_kv_bufs(self, prompt_len: int) -> dict:
-        """Allocate per-layer (K_buf, V_buf) of shape (1, kv_heads, max, dim)."""
+        """Allocate per-layer (K_buf, V_buf) of shape (1, kv_heads, max, dim).
+
+        dtype matches the engine's configured dtype (defaults to fp16 from
+        the CLI) so SDPA inside the in-place attention path sees matching
+        Q/K/V dtypes; mismatching this with self.dtype triggers
+        ``RuntimeError: Expected query, key, and value to have the same dtype``.
+        """
         assert self.draft_model is not None
         cfg = self.draft_config
         max_seqlen = max(prompt_len + 1024, 2048)  # prompt + decode headroom
@@ -1255,11 +1261,11 @@ class Engine:
         for _ in range(cfg.num_hidden_layers):
             K = torch.empty(
                 (1, cfg.num_key_value_heads, max_seqlen, cfg.head_dim),
-                dtype=torch.bfloat16, device=self.device,
+                dtype=self.dtype, device=self.device,
             )
             V = torch.empty(
                 (1, cfg.num_key_value_heads, max_seqlen, cfg.head_dim),
-                dtype=torch.bfloat16, device=self.device,
+                dtype=self.dtype, device=self.device,
             )
             bufs.append((K, V))
         return {"bufs": bufs, "len": 0, "max": max_seqlen}
