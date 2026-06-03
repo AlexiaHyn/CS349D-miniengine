@@ -1,0 +1,925 @@
+i-0afbb188b59291364	 + curl -sf -m 4 http://localhost:8000/spec_stats
+[  187.508680] cloud-init[1385]: + grep -q '"enabled":true'
+[  187.517708] cloud-init[1385]: + sleep 10
+[  197.521562] cloud-init[1385]: + for i in {1..150}
+[  197.523487] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  197.525341] cloud-init[1385]: + grep -q '"enabled":true'
+[  197.552498] cloud-init[1385]: + sleep 10
+[  207.556368] cloud-init[1385]: + for i in {1..150}
+[  207.556671] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  207.558323] cloud-init[1385]: + grep -q '"enabled":true'
+[  207.564431] cloud-init[1385]: + sleep 10
+[  217.566863] cloud-init[1385]: + for i in {1..150}
+[  217.567954] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  217.572738] cloud-init[1385]: + grep -q '"enabled":true'
+[  217.633362] cloud-init[1385]: + sleep 10
+[  227.577474] cloud-init[1385]: + for i in {1..150}
+[  227.578354] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  227.578433] cloud-init[1385]: + grep -q '"enabled":true'
+[  227.797970] cloud-init[1385]: + sleep 10
+[  237.800199] cloud-init[1385]: + for i in {1..150}
+[  237.800464] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  237.800705] cloud-init[1385]: + grep -q '"enabled":true'
+[  237.823392] cloud-init[1385]: + sleep 10
+[  247.825870] cloud-init[1385]: + for i in {1..150}
+[  247.826866] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  247.828099] cloud-init[1385]: + grep -q '"enabled":true'
+[  247.833953] cloud-init[1385]: + sleep 10
+[  257.836712] cloud-init[1385]: + for i in {1..150}
+[  257.837098] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  257.837334] cloud-init[1385]: + grep -q '"enabled":true'
+[  257.846251] cloud-init[1385]: + sleep 10
+[  267.848958] cloud-init[1385]: + for i in {1..150}
+[  267.849905] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  267.851049] cloud-init[1385]: + grep -q '"enabled":true'
+[  267.856849] cloud-init[1385]: + sleep 10
+[  277.865324] cloud-init[1385]: + for i in {1..150}
+[  277.865913] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  277.866043] cloud-init[1385]: + grep -q '"enabled":true'
+[  277.905223] cloud-init[1385]: + sleep 10
+[  287.905703] cloud-init[1385]: + for i in {1..150}
+[  287.906063] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  287.907618] cloud-init[1385]: + grep -q '"enabled":true'
+[  288.012087] cloud-init[1385]: + sleep 10
+[  298.013991] cloud-init[1385]: + for i in {1..150}
+[  298.015079] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  298.015171] cloud-init[1385]: + grep -q '"enabled":true'
+[  298.021693] cloud-init[1385]: + sleep 10
+[  308.023936] cloud-init[1385]: + for i in {1..150}
+[  308.218401] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  308.218491] cloud-init[1385]: + grep -q '"enabled":true'
+[  308.218540] cloud-init[1385]: + sleep 10
+[  318.033911] cloud-init[1385]: + for i in {1..150}
+[  318.034949] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  318.036096] cloud-init[1385]: + grep -q '"enabled":true'
+[  318.041826] cloud-init[1385]: + sleep 10
+[  328.044040] cloud-init[1385]: + for i in {1..150}
+[  328.044942] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  328.046163] cloud-init[1385]: + grep -q '"enabled":true'
+[  328.051897] cloud-init[1385]: + sleep 10
+[  338.054212] cloud-init[1385]: + for i in {1..150}
+[  338.054397] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  338.055763] cloud-init[1385]: + grep -q '"enabled":true'
+[  338.061812] cloud-init[1385]: + sleep 10
+[  348.064457] cloud-init[1385]: + for i in {1..150}
+[  348.064748] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  348.066382] cloud-init[1385]: + grep -q '"enabled":true'
+[  348.072238] cloud-init[1385]: + sleep 10
+[  358.075049] cloud-init[1385]: + for i in {1..150}
+[  358.075984] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  358.077136] cloud-init[1385]: + grep -q '"enabled":true'
+[  358.083472] cloud-init[1385]: + sleep 10
+[  368.086149] cloud-init[1385]: + for i in {1..150}
+[  368.087077] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  368.087155] cloud-init[1385]: + grep -q '"enabled":true'
+[  368.093725] cloud-init[1385]: + sleep 10
+[  378.096579] cloud-init[1385]: + for i in {1..150}
+[  378.097367] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  378.097443] cloud-init[1385]: + grep -q '"enabled":true'
+[  378.106027] cloud-init[1385]: + sleep 10
+[  388.108393] cloud-init[1385]: + for i in {1..150}
+[  388.108677] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  388.110150] cloud-init[1385]: + grep -q '"enabled":true'
+[  388.115879] cloud-init[1385]: + sleep 10
+[  398.118912] cloud-init[1385]: + for i in {1..150}
+[  398.119539] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  398.119760] cloud-init[1385]: + grep -q '"enabled":true'
+[  398.128620] cloud-init[1385]: + sleep 10
+[  408.131158] cloud-init[1385]: + for i in {1..150}
+[  408.131377] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  408.131535] cloud-init[1385]: + grep -q '"enabled":true'
+[  408.140701] cloud-init[1385]: + sleep 10
+[  418.142634] cloud-init[1385]: + for i in {1..150}
+[  418.143151] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  418.143298] cloud-init[1385]: + grep -q '"enabled":true'
+[  418.152341] cloud-init[1385]: + sleep 10
+[  428.154819] cloud-init[1385]: + for i in {1..150}
+[  428.154990] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  428.156087] cloud-init[1385]: + grep -q '"enabled":true'
+[  428.162734] cloud-init[1385]: + sleep 10
+[  438.164891] cloud-init[1385]: + for i in {1..150}
+[  438.165250] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  438.166869] cloud-init[1385]: + grep -q '"enabled":true'
+[  438.172578] cloud-init[1385]: + sleep 10
+[  448.175235] cloud-init[1385]: + for i in {1..150}
+[  448.175409] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  448.176784] cloud-init[1385]: + grep -q '"enabled":true'
+[  448.182875] cloud-init[1385]: + sleep 10
+[  458.185707] cloud-init[1385]: + for i in {1..150}
+[  458.185875] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  458.186249] cloud-init[1385]: + grep -q '"enabled":true'
+[  458.195156] cloud-init[1385]: + sleep 10
+[  468.197569] cloud-init[1385]: + for i in {1..150}
+[  468.198055] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  468.198294] cloud-init[1385]: + grep -q '"enabled":true'
+[  468.205566] cloud-init[1385]: + sleep 10
+[  478.208310] cloud-init[1385]: + for i in {1..150}
+[  478.209279] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  478.209346] cloud-init[1385]: + grep -q '"enabled":true'
+[  478.216252] cloud-init[1385]: + sleep 10
+[  488.218433] cloud-init[1385]: + for i in {1..150}
+[  488.218839] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  488.220348] cloud-init[1385]: + grep -q '"enabled":true'
+[  488.226335] cloud-init[1385]: + sleep 10
+[  498.228654] cloud-init[1385]: + for i in {1..150}
+[  498.228976] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  498.229093] cloud-init[1385]: + grep -q '"enabled":true'
+[  498.238029] cloud-init[1385]: + sleep 10
+[  508.240945] cloud-init[1385]: + for i in {1..150}
+[  508.241356] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  508.241545] cloud-init[1385]: + grep -q '"enabled":true'
+[  508.250436] cloud-init[1385]: + sleep 10
+[  518.253520] cloud-init[1385]: + for i in {1..150}
+[  518.253788] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  518.255383] cloud-init[1385]: + grep -q '"enabled":true'
+[  518.261222] cloud-init[1385]: + sleep 10
+[  528.263706] cloud-init[1385]: + for i in {1..150}
+[  528.263947] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  528.264276] cloud-init[1385]: + grep -q '"enabled":true'
+[  528.273163] cloud-init[1385]: + sleep 10
+[  538.275696] cloud-init[1385]: + for i in {1..150}
+[  538.275884] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  538.276280] cloud-init[1385]: + grep -q '"enabled":true'
+[  538.285195] cloud-init[1385]: + sleep 10
+[  548.287580] cloud-init[1385]: + for i in {1..150}
+[  548.287974] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  548.288473] cloud-init[1385]: + grep -q '"enabled":true'
+[  548.297523] cloud-init[1385]: + sleep 10
+[  558.300596] cloud-init[1385]: + for i in {1..150}
+[  558.301112] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  558.302717] cloud-init[1385]: + grep -q '"enabled":true'
+[  558.308752] cloud-init[1385]: + sleep 10
+[  568.311154] cloud-init[1385]: + for i in {1..150}
+[  568.311453] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  568.313289] cloud-init[1385]: + grep -q '"enabled":true'
+[  568.319292] cloud-init[1385]: + sleep 10
+[  578.321738] cloud-init[1385]: + for i in {1..150}
+[  578.321914] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  578.323666] cloud-init[1385]: + grep -q '"enabled":true'
+[  578.329687] cloud-init[1385]: + sleep 10
+[  588.332146] cloud-init[1385]: + for i in {1..150}
+[  588.332364] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  588.332593] cloud-init[1385]: + grep -q '"enabled":true'
+[  588.340104] cloud-init[1385]: + sleep 10
+[  598.342517] cloud-init[1385]: + for i in {1..150}
+[  598.342826] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  598.342919] cloud-init[1385]: + grep -q '"enabled":true'
+[  598.351928] cloud-init[1385]: + sleep 10
+[  608.354345] cloud-init[1385]: + for i in {1..150}
+[  608.356563] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  608.357602] cloud-init[1385]: + grep -q '"enabled":true'
+[  608.362460] cloud-init[1385]: + sleep 10
+[  618.365146] cloud-init[1385]: + for i in {1..150}
+[  618.365428] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  618.365529] cloud-init[1385]: + grep -q '"enabled":true'
+[  618.374663] cloud-init[1385]: + sleep 10
+[  628.378072] cloud-init[1385]: + for i in {1..150}
+[  628.378301] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  628.378460] cloud-init[1385]: + grep -q '"enabled":true'
+[  628.387427] cloud-init[1385]: + sleep 10
+[  638.389663] cloud-init[1385]: + for i in {1..150}
+[  638.389835] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  638.391628] cloud-init[1385]: + grep -q '"enabled":true'
+[  638.397502] cloud-init[1385]: + sleep 10
+[  648.400067] cloud-init[1385]: + for i in {1..150}
+[  648.400453] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  648.402159] cloud-init[1385]: + grep -q '"enabled":true'
+[  648.408069] cloud-init[1385]: + sleep 10
+[  658.410401] cloud-init[1385]: + for i in {1..150}
+[  658.410814] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  658.410917] cloud-init[1385]: + grep -q '"enabled":true'
+[  658.419875] cloud-init[1385]: + sleep 10
+[  668.422484] cloud-init[1385]: + for i in {1..150}
+[  668.422684] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  668.422873] cloud-init[1385]: + grep -q '"enabled":true'
+[  668.431871] cloud-init[1385]: + sleep 10
+[  678.434913] cloud-init[1385]: + for i in {1..150}
+[  678.435836] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  678.435909] cloud-init[1385]: + grep -q '"enabled":true'
+[  678.443254] cloud-init[1385]: + sleep 10
+[  688.445977] cloud-init[1385]: + for i in {1..150}
+[  688.446296] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  688.446425] cloud-init[1385]: + grep -q '"enabled":true'
+[  688.455564] cloud-init[1385]: + sleep 10
+[  698.458046] cloud-init[1385]: + for i in {1..150}
+[  698.458319] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  698.458411] cloud-init[1385]: + grep -q '"enabled":true'
+[  698.467476] cloud-init[1385]: + sleep 10
+[  708.469816] cloud-init[1385]: + for i in {1..150}
+[  708.470515] cloud-init[1385]: + grep -q '"enabled":true'
+[  708.471591] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  708.479659] cloud-init[1385]: + sleep 10
+[  718.482658] cloud-init[1385]: + for i in {1..150}
+[  718.483255] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  718.483463] cloud-init[1385]: + grep -q '"enabled":true'
+[  718.492219] cloud-init[1385]: + sleep 10
+[  728.495134] cloud-init[1385]: + for i in {1..150}
+[  728.495324] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  728.495582] cloud-init[1385]: + grep -q '"enabled":true'
+[  728.504582] cloud-init[1385]: + sleep 10
+[  738.507057] cloud-init[1385]: + for i in {1..150}
+[  738.507299] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  738.508981] cloud-init[1385]: + grep -q '"enabled":true'
+[  738.514922] cloud-init[1385]: + sleep 10
+[  748.517646] cloud-init[1385]: + for i in {1..150}
+[  748.518072] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  748.519511] cloud-init[1385]: + grep -q '"enabled":true'
+[  748.525538] cloud-init[1385]: + sleep 10
+[  758.527790] cloud-init[1385]: + for i in {1..150}
+[  758.528098] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  758.529918] cloud-init[1385]: + grep -q '"enabled":true'
+[  758.535969] cloud-init[1385]: + sleep 10
+[  768.538034] cloud-init[1385]: + for i in {1..150}
+[  768.538290] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  768.539998] cloud-init[1385]: + grep -q '"enabled":true'
+[  768.546034] cloud-init[1385]: + sleep 10
+[  778.548963] cloud-init[1385]: + for i in {1..150}
+[  778.549330] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  778.550391] cloud-init[1385]: + grep -q '"enabled":true'
+[  778.556726] cloud-init[1385]: + sleep 10
+[  788.559544] cloud-init[1385]: + for i in {1..150}
+[  788.559852] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  788.559914] cloud-init[1385]: + grep -q '"enabled":true'
+[  788.568967] cloud-init[1385]: + sleep 10
+[  798.571595] cloud-init[1385]: + for i in {1..150}
+[  798.574100] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  798.574180] cloud-init[1385]: + grep -q '"enabled":true'
+[  798.581645] cloud-init[1385]: + sleep 10
+[  808.584081] cloud-init[1385]: + for i in {1..150}
+[  808.585142] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  808.586365] cloud-init[1385]: + grep -q '"enabled":true'
+[  808.591885] cloud-init[1385]: + sleep 10
+[  818.594256] cloud-init[1385]: + for i in {1..150}
+[  818.595295] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  818.595365] cloud-init[1385]: + grep -q '"enabled":true'
+[  818.602152] cloud-init[1385]: + sleep 10
+[  828.604538] cloud-init[1385]: + for i in {1..150}
+[  828.605589] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  828.605663] cloud-init[1385]: + grep -q '"enabled":true'
+[  828.612483] cloud-init[1385]: + sleep 10
+[  838.615064] cloud-init[1385]: + for i in {1..150}
+[  838.615973] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  838.617093] cloud-init[1385]: + grep -q '"enabled":true'
+[  838.622641] cloud-init[1385]: + sleep 10
+[  848.625314] cloud-init[1385]: + for i in {1..150}
+[  848.625550] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  848.625695] cloud-init[1385]: + grep -q '"enabled":true'
+[  848.634639] cloud-init[1385]: + sleep 10
+[  858.637502] cloud-init[1385]: + for i in {1..150}
+[  858.638124] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  858.638303] cloud-init[1385]: + grep -q '"enabled":true'
+[  858.647139] cloud-init[1385]: + sleep 10
+[  868.649545] cloud-init[1385]: + for i in {1..150}
+[  868.649718] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  868.649949] cloud-init[1385]: + grep -q '"enabled":true'
+[  868.659114] cloud-init[1385]: + sleep 10
+[  878.661684] cloud-init[1385]: + for i in {1..150}
+[  878.661955] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  878.663707] cloud-init[1385]: + grep -q '"enabled":true'
+[  878.669718] cloud-init[1385]: + sleep 10
+[  888.672316] cloud-init[1385]: + for i in {1..150}
+[  888.673205] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  888.674314] cloud-init[1385]: + grep -q '"enabled":true'
+[  888.680129] cloud-init[1385]: + sleep 10
+[  898.682539] cloud-init[1385]: + for i in {1..150}
+[  898.683435] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  898.684601] cloud-init[1385]: + grep -q '"enabled":true'
+[  898.690308] cloud-init[1385]: + sleep 10
+[  908.693386] cloud-init[1385]: + for i in {1..150}
+[  908.694695] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  908.694772] cloud-init[1385]: + grep -q '"enabled":true'
+[  908.702910] cloud-init[1385]: + sleep 10
+[  918.705188] cloud-init[1385]: + for i in {1..150}
+[  918.706118] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  918.706200] cloud-init[1385]: + grep -q '"enabled":true'
+[  918.713628] cloud-init[1385]: + sleep 10
+[  928.715656] cloud-init[1385]: + for i in {1..150}
+[  928.715962] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  928.717575] cloud-init[1385]: + grep -q '"enabled":true'
+[  928.723638] cloud-init[1385]: + sleep 10
+[  938.725686] cloud-init[1385]: + for i in {1..150}
+[  938.726110] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  938.727628] cloud-init[1385]: + grep -q '"enabled":true'
+[  938.733595] cloud-init[1385]: + sleep 10
+[  948.735550] cloud-init[1385]: + for i in {1..150}
+[  948.735847] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  948.737115] cloud-init[1385]: + grep -q '"enabled":true'
+[  948.743233] cloud-init[1385]: + sleep 10
+[  958.746239] cloud-init[1385]: + for i in {1..150}
+[  958.746434] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  958.746618] cloud-init[1385]: + grep -q '"enabled":true'
+[  958.755705] cloud-init[1385]: + sleep 10
+[  968.758137] cloud-init[1385]: + for i in {1..150}
+[  968.758425] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  968.759868] cloud-init[1385]: + grep -q '"enabled":true'
+[  968.765869] cloud-init[1385]: + sleep 10
+[  978.768708] cloud-init[1385]: + for i in {1..150}
+[  978.769105] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  978.769301] cloud-init[1385]: + grep -q '"enabled":true'
+[  978.778139] cloud-init[1385]: + sleep 10
+[  988.780574] cloud-init[1385]: + for i in {1..150}
+[  988.780861] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  988.780946] cloud-init[1385]: + grep -q '"enabled":true'
+[  988.789918] cloud-init[1385]: + sleep 10
+[  998.792961] cloud-init[1385]: + for i in {1..150}
+[  998.793148] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[  998.793350] cloud-init[1385]: + grep -q '"enabled":true'
+[  998.802482] cloud-init[1385]: + sleep 10
+[ 1008.804944] cloud-init[1385]: + for i in {1..150}
+[ 1008.805457] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1008.807139] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1008.812743] cloud-init[1385]: + sleep 10
+[ 1018.815480] cloud-init[1385]: + for i in {1..150}
+[ 1018.815659] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1018.817046] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1018.823076] cloud-init[1385]: + sleep 10
+[ 1028.825472] cloud-init[1385]: + for i in {1..150}
+[ 1028.825838] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1028.826265] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1028.842731] cloud-init[1385]: + sleep 10
+[ 1038.845480] cloud-init[1385]: + for i in {1..150}
+[ 1038.847104] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1038.847178] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1038.855431] cloud-init[1385]: + sleep 10
+[ 1048.858076] cloud-init[1385]: + for i in {1..150}
+[ 1048.859042] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1048.860172] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1048.881300] cloud-init[1385]: + sleep 10
+[ 1058.883955] cloud-init[1385]: + for i in {1..150}
+[ 1058.885145] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1058.886217] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1058.891840] cloud-init[1385]: + sleep 10
+[ 1068.893952] cloud-init[1385]: + for i in {1..150}
+[ 1068.894346] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1068.895891] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1068.901766] cloud-init[1385]: + sleep 10
+[ 1078.904409] cloud-init[1385]: + for i in {1..150}
+[ 1078.904732] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1078.906353] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1078.912182] cloud-init[1385]: + sleep 10
+[ 1088.915283] cloud-init[1385]: + for i in {1..150}
+[ 1088.916125] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1088.916213] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1088.924148] cloud-init[1385]: + sleep 10
+[ 1098.926597] cloud-init[1385]: + for i in {1..150}
+[ 1098.929087] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1098.929162] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1098.934395] cloud-init[1385]: + sleep 10
+[ 1108.936447] cloud-init[1385]: + for i in {1..150}
+[ 1108.936747] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1108.938414] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1108.944349] cloud-init[1385]: + sleep 10
+[ 1118.947002] cloud-init[1385]: + for i in {1..150}
+[ 1118.947312] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1118.948561] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1118.954625] cloud-init[1385]: + sleep 10
+[ 1128.957258] cloud-init[1385]: + for i in {1..150}
+[ 1128.957522] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1128.957641] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1128.966606] cloud-init[1385]: + sleep 10
+[ 1138.968693] cloud-init[1385]: + for i in {1..150}
+[ 1138.968956] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1138.970579] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1138.976509] cloud-init[1385]: + sleep 10
+[ 1148.979302] cloud-init[1385]: + for i in {1..150}
+[ 1148.979504] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1148.979689] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1148.987075] cloud-init[1385]: + sleep 10
+[ 1158.989481] cloud-init[1385]: + for i in {1..150}
+[ 1158.989858] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1158.991397] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1158.997265] cloud-init[1385]: + sleep 10
+[ 1168.999881] cloud-init[1385]: + for i in {1..150}
+[ 1169.000239] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1169.000439] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1169.009337] cloud-init[1385]: + sleep 10
+[ 1179.011770] cloud-init[1385]: + for i in {1..150}
+[ 1179.012074] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1179.012135] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1179.021207] cloud-init[1385]: + sleep 10
+[ 1189.027358] cloud-init[1385]: + for i in {1..150}
+[ 1189.029730] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1189.030957] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1189.052089] cloud-init[1385]: + sleep 10
+[ 1199.055962] cloud-init[1385]: + for i in {1..150}
+[ 1199.056321] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1199.056459] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1199.065714] cloud-init[1385]: + sleep 10
+[ 1209.068128] cloud-init[1385]: + for i in {1..150}
+[ 1209.070457] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1209.070538] cloud-init[1385]: + grep -q '"enabled":true'
+[ 1209.079715] cloud-init[1385]: + echo 'spec server ready after 1050s'
+[ 1209.079799] cloud-init[1385]: spec server ready after 1050s
+[ 1209.079849] cloud-init[1385]: + break
+[ 1209.080516] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/spec_stats
+[ 1209.080671] cloud-init[1385]: + grep -q '"k":3'
+[ 1209.088103] cloud-init[1385]: + echo 'warming JIT...'
+[ 1209.088203] cloud-init[1385]: warming JIT...
+[ 1209.088366] cloud-init[1385]: + curl -s -m 300 -X POST http://localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"default","messages":[{"role":"user","content":"Tell me about the moon."}],"max_tokens":32}'
+[ 1290.514668] cloud-init[1385]: + echo 'warm done'
+[ 1290.514937] cloud-init[1385]: warm done
+[ 1290.515034] cloud-init[1385]: + grep -q 'AssertionError\|RuntimeError' /tmp/srv_k3.log
+[ 1290.519232] cloud-init[1385]: + echo '===== K=3 spec bench ====='
+[ 1290.519327] cloud-init[1385]: ===== K=3 spec bench =====
+[ 1290.519827] cloud-init[1385]: + timeout 600 python3 -m benchmark.bench_serving --model Qwen/Qwen3-8B --base-url http://localhost:8000 --input-len 1024 --output-len 256 --concurrencies 1 --num-requests 8
+[ 1290.520080] cloud-init[1385]: + tee /tmp/spec_k3_aws.log
+[ 1291.425831] cloud-init[1385]: ============================================================
+[ 1291.426057] cloud-init[1385]:   Serving Benchmark
+[ 1291.426122] cloud-init[1385]:   Server       : http://localhost:8000
+[ 1291.426169] cloud-init[1385]:   Model        : Qwen/Qwen3-8B
+[ 1291.426211] cloud-init[1385]:   Load mode    : closed-loop
+[ 1291.426252] cloud-init[1385]:   Requests     : 8 per level
+[ 1291.426293] cloud-init[1385]:   Input len    : 1024
+[ 1291.426354] cloud-init[1385]:   Output len   : 256
+[ 1291.426398] cloud-init[1385]:   Randomness   : 0.5
+[ 1291.426439] cloud-init[1385]:   Concurrencies: [1]
+[ 1291.426480] cloud-init[1385]: ============================================================
+[ 1291.426528] cloud-init[1385]:   Loading tokenizer...
+[ 1306.666116] cloud-init[1385]: /opt/pytorch/lib/python3.12/site-packages/torch/cuda/__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+[ 1306.670224] cloud-init[1385]:   import pynvml  # type: ignore[import]
+[ 1313.888689] cloud-init[1385]:   Loading WildChat prompts...
+[ 1314.864453] cloud-init[1385]:   Loaded 40 candidate prompts
+[ 1314.864740] cloud-init[1385]:   Preparing 8 requests...
+[ 1315.309316] cloud-init[1385]:   Input lengths:  min=558, max=985, mean=809
+[ 1315.309488] cloud-init[1385]:   Output lengths: min=139, max=220, mean=170
+[ 1315.337046] cloud-init[1385]:   Running concurrency=1 (8 requests, closed-loop)...
+[ 1329.965055] cloud-init[1385]:     [  1/8] ok in=885 out=216 ttft=365ms compl=14627ms (elapsed 14.6s)
+[ 1338.328734] cloud-init[1385]:     [  2/8] ok in=788 out=139 ttft=347ms compl=8364ms (elapsed 23.0s)
+[ 1348.809702] cloud-init[1385]:     [  3/8] ok in=985 out=159 ttft=116ms compl=10481ms (elapsed 33.5s)
+[ 1357.622712] cloud-init[1385]:     [  4/8] ok in=908 out=148 ttft=397ms compl=8813ms (elapsed 42.3s)
+[ 1368.254885] cloud-init[1385]:     [  5/8] ok in=815 out=176 ttft=352ms compl=10632ms (elapsed 52.9s)
+[ 1375.372686] cloud-init[1385]:     [  6/8] ok in=715 out=96 ttft=324ms compl=7118ms (elapsed 60.0s)
+[ 1389.219774] cloud-init[1385]:     [  7/8] ok in=558 out=186 ttft=301ms compl=13847ms (elapsed 73.9s)
+[ 1397.465571] cloud-init[1385]:     [  8/8] ok in=815 out=148 ttft=360ms compl=8246ms (elapsed 82.1s)
+[ 1397.533879] cloud-init[1385]:   conc=1      TTFT p50=    349ms  p99=    395ms  Compl p50=   9647ms  p99=  14573ms  GenTok/s=     15  ok=8
+[ 1397.593843] cloud-init[1385]: ====================================================================================================
+[ 1397.593952] cloud-init[1385]:   Conc   TTFT_p50   TTFT_p99  Compl_p50  Compl_p99   TPOT_p50   TPOT_p99   GenTok/s    OK
+[ 1397.594057] cloud-init[1385]:         (ms)       (ms)        (ms)        (ms)        (ms)        (ms)
+[ 1397.594225] cloud-init[1385]: ----------------------------------------------------------------------------------------------------
+[ 1397.594584] cloud-init[1385]:      1        349        395       9647      14573       62.2       73.1         15     8
+[ 1397.594762] cloud-init[1385]: ====================================================================================================
+[ 1398.421203] cloud-init[1385]: + echo '===== /spec_stats final ====='
+[ 1398.421473] cloud-init[1385]: ===== /spec_stats final =====
+[ 1398.421625] cloud-init[1385]: + curl -s http://localhost:8000/spec_stats
+[ 1398.433633] cloud-init[1385]: {"enabled":true,"k":3,"target_forwards":529,"draft_forwards":1755,"accepted_tokens":783,"bonus_tokens":529,"proposed_tokens":1587,"generated_tokens":1312,"mean_accept_length":2.4801512287334595,"target_forwards_per_token":0.4032012195121951,"acceptance_rate":0.4933837429111531}++ grep -E '^\s+1\s+[0-9]' /tmp/spec_k3_aws.log
+[ 1398.433792] cloud-init[1385]: ++ tail -1
+[ 1398.435943] cloud-init[1385]: ++ awk '{print $6}'
+[ 1398.441995] cloud-init[1385]: + SPEC_TPOT=62.2
+[ 1398.442864] cloud-init[1385]: ++ curl -s http://localhost:8000/spec_stats
+[ 1398.442947] cloud-init[1385]: ++ python3 -c 'import json,sys; print(json.load(sys.stdin)['\''mean_accept_length'\''])'
+[ 1398.483860] cloud-init[1385]: + SPEC_ACCEPT=2.4801512287334595
+[ 1398.483969] cloud-init[1385]: + echo SPEC_TPOT_P50=62.2
+[ 1398.484049] cloud-init[1385]: SPEC_TPOT_P50=62.2
+[ 1398.484098] cloud-init[1385]: + echo SPEC_ACCEPT_LEN=2.4801512287334595
+[ 1398.484143] cloud-init[1385]: SPEC_ACCEPT_LEN=2.4801512287334595
+[ 1398.484205] cloud-init[1385]: + kill -9 1508
+[ 1398.485554] cloud-init[1385]: + sleep 5
+[ 1403.486608] cloud-init[1385]: bash: line 76:  1508 Killed                  nohup python3 -m miniengine --model Qwen/Qwen3-8B --mode paged --mem-fraction-static 0.93 --page-size 32 --prefill-chunk-size 512 --speculative-draft-model Qwen/Qwen3-0.6B --speculative-num-draft-tokens 3 --port 8000 > /tmp/srv_k3.log 2>&1
+[ 1403.489895] cloud-init[1385]: + NOSPEC_PID=2418
+[ 1403.489960] cloud-init[1385]: + nohup python3 -m miniengine --model Qwen/Qwen3-8B --mode paged --mem-fraction-static 0.93 --page-size 32 --prefill-chunk-size 512 --port 8000
+[ 1403.491400] cloud-init[1385]: + for i in {1..150}
+[ 1403.492220] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1403.496734] cloud-init[1385]: + sleep 10
+[ 1413.499070] cloud-init[1385]: + for i in {1..150}
+[ 1413.504683] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1413.506491] cloud-init[1385]: + sleep 10
+[ 1423.508684] cloud-init[1385]: + for i in {1..150}
+[ 1423.508953] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1423.517400] cloud-init[1385]: + sleep 10
+[ 1433.520383] cloud-init[1385]: + for i in {1..150}
+[ 1433.520593] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1433.527824] cloud-init[1385]: + sleep 10
+[ 1443.530193] cloud-init[1385]: + for i in {1..150}
+[ 1443.530356] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1443.537635] cloud-init[1385]: + sleep 10
+[ 1453.539669] cloud-init[1385]: + for i in {1..150}
+[ 1453.539838] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1453.548237] cloud-init[1385]: + sleep 10
+[ 1463.550262] cloud-init[1385]: + for i in {1..150}
+[ 1463.550597] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1463.558966] cloud-init[1385]: + sleep 10
+[ 1473.561642] cloud-init[1385]: + for i in {1..150}
+[ 1473.561838] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1473.570139] cloud-init[1385]: + sleep 10
+[ 1483.573159] cloud-init[1385]: + for i in {1..150}
+[ 1483.573326] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1483.581771] cloud-init[1385]: + sleep 10
+[ 1493.584530] cloud-init[1385]: + for i in {1..150}
+[ 1493.584783] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1493.593435] cloud-init[1385]: + sleep 10
+[ 1503.596348] cloud-init[1385]: + for i in {1..150}
+[ 1503.596660] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1503.604909] cloud-init[1385]: + sleep 10
+[ 1513.607669] cloud-init[1385]: + for i in {1..150}
+[ 1513.608969] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1513.616297] cloud-init[1385]: + sleep 10
+[ 1523.619024] cloud-init[1385]: + for i in {1..150}
+[ 1523.619253] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1523.627600] cloud-init[1385]: + sleep 10
+[ 1533.630303] cloud-init[1385]: + for i in {1..150}
+[ 1533.630466] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1533.639054] cloud-init[1385]: + sleep 10
+[ 1543.641605] cloud-init[1385]: + for i in {1..150}
+[ 1543.641915] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1543.648829] cloud-init[1385]: + sleep 10
+[ 1553.651631] cloud-init[1385]: + for i in {1..150}
+[ 1553.651946] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1553.660258] cloud-init[1385]: + sleep 10
+[ 1563.663029] cloud-init[1385]: + for i in {1..150}
+[ 1563.663234] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1563.671714] cloud-init[1385]: + sleep 10
+[ 1573.674490] cloud-init[1385]: + for i in {1..150}
+[ 1573.674658] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1573.683681] cloud-init[1385]: + sleep 10
+[ 1583.686264] cloud-init[1385]: + for i in {1..150}
+[ 1583.690667] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1583.796566] cloud-init[1385]: + sleep 10
+[ 1593.798616] cloud-init[1385]: + for i in {1..150}
+[ 1593.798890] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1593.807334] cloud-init[1385]: + sleep 10
+[ 1603.809754] cloud-init[1385]: + for i in {1..150}
+[ 1603.810095] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1603.818345] cloud-init[1385]: + sleep 10
+[ 1613.820730] cloud-init[1385]: + for i in {1..150}
+[ 1613.820941] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1613.828235] cloud-init[1385]: + sleep 10
+[ 1623.830611] cloud-init[1385]: + for i in {1..150}
+[ 1623.830918] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1623.837997] cloud-init[1385]: + sleep 10
+[ 1633.841128] cloud-init[1385]: + for i in {1..150}
+[ 1633.841674] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1633.848934] cloud-init[1385]: + sleep 10
+[ 1643.851459] cloud-init[1385]: + for i in {1..150}
+[ 1643.851796] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1643.860855] cloud-init[1385]: + sleep 10
+[ 1653.864089] cloud-init[1385]: + for i in {1..150}
+[ 1653.864330] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1653.890872] cloud-init[1385]: + sleep 10
+[ 1663.893408] cloud-init[1385]: + for i in {1..150}
+[ 1663.893728] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1663.927626] cloud-init[1385]: + sleep 10
+[ 1673.930452] cloud-init[1385]: + for i in {1..150}
+[ 1673.931146] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1673.939135] cloud-init[1385]: + sleep 10
+[ 1683.941583] cloud-init[1385]: + for i in {1..150}
+[ 1683.941850] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1683.950252] cloud-init[1385]: + sleep 10
+[ 1693.953197] cloud-init[1385]: + for i in {1..150}
+[ 1693.953479] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1693.961753] cloud-init[1385]: + sleep 10
+[ 1703.964298] cloud-init[1385]: + for i in {1..150}
+[ 1703.964623] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1703.972951] cloud-init[1385]: + sleep 10
+[ 1713.975125] cloud-init[1385]: + for i in {1..150}
+[ 1713.975402] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1713.985701] cloud-init[1385]: + sleep 10
+[ 1723.988119] cloud-init[1385]: + for i in {1..150}
+[ 1723.988298] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1723.996822] cloud-init[1385]: + sleep 10
+[ 1733.999787] cloud-init[1385]: + for i in {1..150}
+[ 1734.000067] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1734.008440] cloud-init[1385]: + sleep 10
+[ 1744.011506] cloud-init[1385]: + for i in {1..150}
+[ 1744.011662] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1744.020143] cloud-init[1385]: + sleep 10
+[ 1754.022658] cloud-init[1385]: + for i in {1..150}
+[ 1754.022921] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1754.031255] cloud-init[1385]: + sleep 10
+[ 1764.033687] cloud-init[1385]: + for i in {1..150}
+[ 1764.033993] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1764.042350] cloud-init[1385]: + sleep 10
+[ 1774.044965] cloud-init[1385]: + for i in {1..150}
+[ 1774.045254] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1774.053346] cloud-init[1385]: + sleep 10
+[ 1784.055580] cloud-init[1385]: + for i in {1..150}
+[ 1784.055749] cloud-init[1385]: + curl -sf -m 4 http://localhost:8000/cache_stats
+[ 1784.067031] cloud-init[1385]: + echo 'nospec server ready after 390s'
+[ 1784.067929] cloud-init[1385]: nospec server ready after 390s
+[ 1784.068644] cloud-init[1385]: + break
+[ 1784.068838] cloud-init[1385]: + curl -s -m 200 -X POST http://localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"default","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
+[ 1797.196214] cloud-init[1385]: + echo '===== non-spec baseline bench ====='
+[ 1797.196998] cloud-init[1385]: ===== non-spec baseline bench =====
+[ 1797.198057] cloud-init[1385]: + timeout 600 python3 -m benchmark.bench_serving --model Qwen/Qwen3-8B --base-url http://localhost:8000 --input-len 1024 --output-len 256 --concurrencies 1 --num-requests 8
+[ 1797.199028] cloud-init[1385]: + tee /tmp/nospec_aws.log
+[ 1797.807053] cloud-init[1385]: ============================================================
+[ 1797.807891] cloud-init[1385]:   Serving Benchmark
+[ 1797.808951] cloud-init[1385]:   Server       : http://localhost:8000
+[ 1797.809077] cloud-init[1385]:   Model        : Qwen/Qwen3-8B
+[ 1797.809293] cloud-init[1385]:   Load mode    : closed-loop
+[ 1797.809473] cloud-init[1385]:   Requests     : 8 per level
+[ 1797.810243] cloud-init[1385]:   Input len    : 1024
+[ 1797.810428] cloud-init[1385]:   Output len   : 256
+[ 1797.811134] cloud-init[1385]:   Randomness   : 0.5
+[ 1797.811253] cloud-init[1385]:   Concurrencies: [1]
+[ 1797.811314] cloud-init[1385]: ============================================================
+[ 1797.811695] cloud-init[1385]:   Loading tokenizer...
+[ 1805.930950] cloud-init[1385]: /opt/pytorch/lib/python3.12/site-packages/torch/cuda/__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+[ 1805.931890] cloud-init[1385]:   import pynvml  # type: ignore[import]
+[ 1812.856444] cloud-init[1385]:   Loading WildChat prompts...
+[ 1813.783338] cloud-init[1385]:   Loaded 40 candidate prompts
+[ 1813.784858] cloud-init[1385]:   Preparing 8 requests...
+[ 1814.228048] cloud-init[1385]:   Input lengths:  min=558, max=985, mean=809
+[ 1814.228725] cloud-init[1385]:   Output lengths: min=139, max=220, mean=170
+[ 1814.254192] cloud-init[1385]:   Running concurrency=1 (8 requests, closed-loop)...
+[ 1828.877805] cloud-init[1385]:     [  1/8] ok in=885 out=216 ttft=347ms compl=14623ms (elapsed 14.6s)
+[ 1838.384908] cloud-init[1385]:     [  2/8] ok in=788 out=139 ttft=349ms compl=9507ms (elapsed 24.1s)
+[ 1849.016300] cloud-init[1385]:     [  3/8] ok in=985 out=159 ttft=97ms compl=10631ms (elapsed 34.8s)
+[ 1859.211341] cloud-init[1385]:     [  4/8] ok in=908 out=148 ttft=401ms compl=10195ms (elapsed 45.0s)
+[ 1871.296606] cloud-init[1385]:     [  5/8] ok in=815 out=176 ttft=357ms compl=12085ms (elapsed 57.0s)
+[ 1878.014105] cloud-init[1385]:     [  6/8] ok in=715 out=96 ttft=321ms compl=6717ms (elapsed 63.8s)
+[ 1890.608837] cloud-init[1385]:     [  7/8] ok in=558 out=186 ttft=291ms compl=12595ms (elapsed 76.4s)
+[ 1900.771563] cloud-init[1385]:     [  8/8] ok in=815 out=148 ttft=364ms compl=10163ms (elapsed 86.5s)
+[ 1900.773038] cloud-init[1385]:   conc=1      TTFT p50=    348ms  p99=    398ms  Compl p50=  10413ms  p99=  14481ms  GenTok/s=     15  ok=8
+[ 1900.790918] cloud-init[1385]: ====================================================================================================
+[ 1900.792798] cloud-init[1385]:   Conc   TTFT_p50   TTFT_p99  Compl_p50  Compl_p99   TPOT_p50   TPOT_p99   GenTok/s    OK
+[ 1900.794344] cloud-init[1385]:         (ms)       (ms)        (ms)        (ms)        (ms)        (ms)
+[ 1900.794421] cloud-init[1385]: ----------------------------------------------------------------------------------------------------
+[ 1900.795939] cloud-init[1385]:      1        348        398      10413      14481       66.6       67.3         15     8
+[ 1900.796348] cloud-init[1385]: ====================================================================================================
+[ 1902.554570] cloud-init[1385]: ++ grep -E '^\s+1\s+[0-9]' /tmp/nospec_aws.log
+[ 1902.554775] cloud-init[1385]: ++ tail -1
+[ 1902.555851] cloud-init[1385]: ++ awk '{print $6}'
+[ 1902.566963] cloud-init[1385]: + NOSPEC_TPOT=66.6
+[ 1902.567101] cloud-init[1385]: + echo NOSPEC_TPOT_P50=66.6
+[ 1902.567361] cloud-init[1385]: NOSPEC_TPOT_P50=66.6
+[ 1902.567585] cloud-init[1385]: + echo
+[ 1902.567778] cloud-init[1385]: + echo =================================================================
+[ 1902.567960] cloud-init[1385]: =================================================================
+[ 1902.568366] cloud-init[1385]: + echo '                       BONUS (c) VERDICT'
+[ 1902.568524] cloud-init[1385]:                        BONUS (c) VERDICT
+[ 1902.568695] cloud-init[1385]: + echo =================================================================
+[ 1902.568834] cloud-init[1385]: =================================================================
+[ 1902.568872] cloud-init[1385]: + echo 'non-spec baseline TPOT p50 : 66.6 ms'
+[ 1902.569294] cloud-init[1385]: non-spec baseline TPOT p50 : 66.6 ms
+[ 1902.569467] cloud-init[1385]: + echo 'spec K=3 TPOT p50          : 62.2 ms'
+[ 1902.569515] cloud-init[1385]: spec K=3 TPOT p50          : 62.2 ms
+[ 1902.569717] cloud-init[1385]: + echo 'spec K=3 mean accept       : 2.4801512287334595'
+[ 1902.569865] cloud-init[1385]: spec K=3 mean accept       : 2.4801512287334595
+[ 1902.569924] cloud-init[1385]: + python3 -
+[ 1902.603507] cloud-init[1385]: TPOT reduction             : +6.6%
+[ 1902.603628] cloud-init[1385]: bonus (c) bar (-20%)       : 53.3 ms
+[ 1902.603859] cloud-init[1385]: verdict                    : FAIL
+[ 1902.609049] cloud-init[1385]: + echo =================================================================
+[ 1902.610466] cloud-init[1385]: =================================================================
+[ 1902.611745] cloud-init[1385]: + echo '===== FULL spec_k3 bench log ====='
+[ 1902.612748] cloud-init[1385]: ===== FULL spec_k3 bench log =====
+[ 1902.614427] cloud-init[1385]: + cat /tmp/spec_k3_aws.log
+[ 1902.615270] cloud-init[1385]: ============================================================
+[ 1902.616477] cloud-init[1385]:   Serving Benchmark
+[ 1902.617206] cloud-init[1385]:   Server       : http://localhost:8000
+[ 1902.618154] cloud-init[1385]:   Model        : Qwen/Qwen3-8B
+[ 1902.618985] cloud-init[1385]:   Load mode    : closed-loop
+[ 1902.619824] cloud-init[1385]:   Requests     : 8 per level
+[ 1902.620655] cloud-init[1385]:   Input len    : 1024
+[ 1902.621401] cloud-init[1385]:   Output len   : 256
+[ 1902.622156] cloud-init[1385]:   Randomness   : 0.5
+[ 1902.622912] cloud-init[1385]:   Concurrencies: [1]
+[ 1902.623686] cloud-init[1385]: ============================================================
+[ 1902.624903] cloud-init[1385]:   Loading tokenizer...
+[ 1902.625687] cloud-init[1385]: /opt/pytorch/lib/python3.12/site-packages/torch/cuda/__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+[ 1902.627065] cloud-init[1385]:   import pynvml  # type: ignore[import]
+[ 1902.628104] cloud-init[1385]:   Loading WildChat prompts...
+[ 1902.628166] cloud-init[1385]:   Loaded 40 candidate prompts
+[ 1902.628224] cloud-init[1385]:   Preparing 8 requests...
+[ 1902.628279] cloud-init[1385]:   Input lengths:  min=558, max=985, mean=809
+[ 1902.628329] cloud-init[1385]:   Output lengths: min=139, max=220, mean=170
+[ 1902.628381] cloud-init[1385]:   Running concurrency=1 (8 requests, closed-loop)...
+[ 1902.628427] cloud-init[1385]:     [  1/8] ok in=885 out=216 ttft=365ms compl=14627ms (elapsed 14.6s)
+[ 1902.630727] cloud-init[1385]:     [  2/8] ok in=788 out=139 ttft=347ms compl=8364ms (elapsed 23.0s)
+[ 1902.631323] cloud-init[1385]:     [  3/8] ok in=985 out=159 ttft=116ms compl=10481ms (elapsed 33.5s)
+[ 1902.633400] cloud-init[1385]:     [  4/8] ok in=908 out=148 ttft=397ms compl=8813ms (elapsed 42.3s)
+[ 1902.633810] cloud-init[1385]:     [  5/8] ok in=815 out=176 ttft=352ms compl=10632ms (elapsed 52.9s)
+[ 1902.634396] cloud-init[1385]:     [  6/8] ok in=715 out=96 ttft=324ms compl=7118ms (elapsed 60.0s)
+[ 1902.634814] cloud-init[1385]:     [  7/8] ok in=558 out=186 ttft=301ms compl=13847ms (elapsed 73.9s)
+[ 1902.635245] cloud-init[1385]:     [  8/8] ok in=815 out=148 ttft=360ms compl=8246ms (elapsed 82.1s)
+[ 1902.635651] cloud-init[1385]:   conc=1      TTFT p50=    349ms  p99=    395ms  Compl p50=   9647ms  p99=  14573ms  GenTok/s=     15  ok=8
+[ 1902.636086] cloud-init[1385]: ====================================================================================================
+[ 1902.636474] cloud-init[1385]:   Conc   TTFT_p50   TTFT_p99  Compl_p50  Compl_p99   TPOT_p50   TPOT_p99   GenTok/s    OK
+[ 1902.636870] cloud-init[1385]:         (ms)       (ms)        (ms)        (ms)        (ms)        (ms)
+[ 1902.637289] cloud-init[1385]: ----------------------------------------------------------------------------------------------------
+[ 1902.637704] cloud-init[1385]:      1        349        395       9647      14573       62.2       73.1         15     8
+[ 1902.638139] cloud-init[1385]: ====================================================================================================
+[ 1902.638547] cloud-init[1385]: + echo '===== FULL nospec bench log ====='
+[ 1902.638956] cloud-init[1385]: ===== FULL nospec bench log =====
+[ 1902.639777] cloud-init[1385]: + cat /tmp/nospec_aws.log
+[ 1902.640195] cloud-init[1385]: ============================================================
+[ 1902.640600] cloud-init[1385]:   Serving Benchmark
+[ 1902.640996] cloud-init[1385]:   Server       : http://localhost:8000
+[ 1902.641417] cloud-init[1385]:   Model        : Qwen/Qwen3-8B
+[ 1902.641828] cloud-init[1385]:   Load mode    : closed-loop
+[ 1902.642261] cloud-init[1385]:   Requests     : 8 per level
+[ 1902.643066] cloud-init[1385]:   Input len    : 1024
+[ 1902.643679] cloud-init[1385]:   Output len   : 256
+[ 1902.644093] cloud-init[1385]:   Randomness   : 0.5
+[ 1902.644507] cloud-init[1385]:   Concurrencies: [1]
+[ 1902.644897] cloud-init[1385]: ============================================================
+[ 1902.645327] cloud-init[1385]:   Loading tokenizer...
+[ 1902.645707] cloud-init[1385]: /opt/pytorch/lib/python3.12/site-packages/torch/cuda/__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+[ 1902.645752] cloud-init[1385]:   import pynvml  # type: ignore[import]
+[ 1902.646167] cloud-init[1385]:   Loading WildChat prompts...
+[ 1902.646571] cloud-init[1385]:   Loaded 40 candidate prompts
+[ 1902.646952] cloud-init[1385]:   Preparing 8 requests...
+[ 1902.647365] cloud-init[1385]:   Input lengths:  min=558, max=985, mean=809
+[ 1902.648214] cloud-init[1385]:   Output lengths: min=139, max=220, mean=170
+[ 1902.648633] cloud-init[1385]:   Running concurrency=1 (8 requests, closed-loop)...
+[ 1902.649653] cloud-init[1385]:     [  1/8] ok in=885 out=216 ttft=347ms compl=14623ms (elapsed 14.6s)
+[ 1902.650674] cloud-init[1385]:     [  2/8] ok in=788 out=139 ttft=349ms compl=9507ms (elapsed 24.1s)
+[ 1902.651105] cloud-init[1385]:     [  3/8] ok in=985 out=159 ttft=97ms compl=10631ms (elapsed 34.8s)
+[ 1902.651531] cloud-init[1385]:     [  4/8] ok in=908 out=148 ttft=401ms compl=10195ms (elapsed 45.0s)
+[ 1902.651938] cloud-init[1385]:     [  5/8] ok in=815 out=176 ttft=357ms compl=12085ms (elapsed 57.0s)
+[ 1902.652357] cloud-init[1385]:     [  6/8] ok in=715 out=96 ttft=321ms compl=6717ms (elapsed 63.8s)
+[ 1902.653599] cloud-init[1385]:     [  7/8] ok in=558 out=186 ttft=291ms compl=12595ms (elapsed 76.4s)
+[ 1902.654038] cloud-init[1385]:     [  8/8] ok in=815 out=148 ttft=364ms compl=10163ms (elapsed 86.5s)
+[ 1902.654798] cloud-init[1385]:   conc=1      TTFT p50=    348ms  p99=    398ms  Compl p50=  10413ms  p99=  14481ms  GenTok/s=     15  ok=8
+[ 1902.654850] cloud-init[1385]: ====================================================================================================
+[ 1902.655645] cloud-init[1385]:   Conc   TTFT_p50   TTFT_p99  Compl_p50  Compl_p99   TPOT_p50   TPOT_p99   GenTok/s    OK
+[ 1902.659579] cloud-init[1385]:         (ms)       (ms)        (ms)        (ms)        (ms)        (ms)
+[ 1902.659998] cloud-init[1385]: ----------------------------------------------------------------------------------------------------
+[ 1902.660615] cloud-init[1385]:      1        348        398      10413      14481       66.6       67.3         15     8
+[ 1902.661427] cloud-init[1385]: ====================================================================================================
+[ 1902.661834] cloud-init[1385]: + echo ==========================
+[ 1902.662269] cloud-init[1385]: ==========================
+[ 1902.662698] cloud-init[1385]: ++ date -u
+[ 1902.664930] cloud-init[1385]: + echo 'USERDATA DONE Wed Jun  3 00:18:19 UTC 2026'
+[ 1902.665792] cloud-init[1385]: USERDATA DONE Wed Jun  3 00:18:19 UTC 2026
+[ 1902.666806] cloud-init[1385]: + echo ==========================
+[ 1902.667219] cloud-init[1385]: ==========================
+[ 1902.667618] cloud-init[1385]: + shutdown -h +2
+[ 1902.668217] cloud-init[1385]: Shutdown scheduled for Wed 2026-06-03 00:20:19 UTC, use 'shutdown -c' to cancel.
+ci-info: ++++++++++++++++++++++++++++++Authorized keys from /home/ubuntu/.ssh/authorized_keys for user ubuntu+++++++++++++++++++++++++++++++
+ci-info: +---------+-------------------------------------------------------------------------------------------------+---------+-----------+
+ci-info: | Keytype |                                       Fingerprint (sha256)                                      | Options |  Comment  |
+ci-info: +---------+-------------------------------------------------------------------------------------------------+---------+-----------+
+ci-info: | ssh-rsa | f3:ad:1d:e7:19:d8:ca:33:c0:5f:f8:b9:d4:45:90:ac:32:59:43:d7:51:e5:c5:c7:26:59:9f:04:15:3c:8b:69 |    -    | cs349-key |
+ci-info: +---------+-------------------------------------------------------------------------------------------------+---------+-----------+
+<14>Jun  3 00:18:19 cloud-init: #############################################################
+<14>Jun  3 00:18:19 cloud-init: -----BEGIN SSH HOST KEY FINGERPRINTS-----
+<14>Jun  3 00:18:19 cloud-init: 256 SHA256:iZR9bUzXKD6rTqMZd9bjZDuuSd+/zNJc4ma7o65pWu8 root@ip-172-31-8-26 (ECDSA)
+<14>Jun  3 00:18:19 cloud-init: 256 SHA256:HNU/sCrRekPHRsicfvJIu2ecVKNxYb0QT3cfWTMhHHM root@ip-172-31-8-26 (ED25519)
+<14>Jun  3 00:18:19 cloud-init: 3072 SHA256:EDuNcQGioegSS1Jtme8UWJrjHvyfZf+/7uCJ5v6LvmU root@ip-172-31-8-26 (RSA)
+<14>Jun  3 00:18:19 cloud-init: -----END SSH HOST KEY FINGERPRINTS-----
+<14>Jun  3 00:18:19 cloud-init: #############################################################
+-----BEGIN SSH HOST KEY KEYS-----
+ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKa3HBDobU1YRdeP2yqE5sMZkR14BsOXBzq0SL+p1JALhm0LyPoQ8ZB0mdDqDQJyyvKWE+isKYtFplXxCjR0jUg= root@ip-172-31-8-26
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDd5O7ed2YLliOpLh0dTYbJe+HROYKUCgj69skL8bzU5 root@ip-172-31-8-26
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCIahTJaHYvgOsYgdkVfcL3nbTd984yRXIk08kVcY2X+UQvCh42mljcsBZxHLc/7ntRdtmt6FuRwyK3ja5OZ44riWBwWLu0JuOETAhvpT7wRlh29yJPnO3UiOIcbyVo/fWIpXkPgXv6DG4Gzf/uXAjgnZmM35tTDVyY8wbpK5UUltXz1FjV6/vhcVyfdW/IUlCKZFeVHA9zWPAHjhlaOMScTw6ZZpMtVwqSBFTWE9NjJt2cG0dV6luimk2E3UCdbvyN8utt52+sPe+2/KLP5LDLMlCnHs4QFuKn0fKUlAUK8Hep5vkaL1Kct1ayltOb4OkwTN6fkd1tSXAdx6sGy0yeUyI9obC81iPjXhZ3o4OBlypzqIOve2x4Z+YiaFu9WizYB0HXCqXTuTKk6SFLJHblrIyZETeUcr8zeUCmYO30qEgpE1OEBoQcf9Z3kboGA9MYYQuqkdWotDRvD4Nyc42yUKbwr+3BAp/AZz4HZga8McwhX/cYNYWNFkQmfayl26c= root@ip-172-31-8-26
+-----END SSH HOST KEY KEYS-----
+[ 1902.751069] cloud-init[1385]: Cloud-init v. 25.3-0ubuntu1~22.04.1 finished at Wed, 03 Jun 2026 00:18:19 +0000. Datasource DataSourceEc2Local.  Up 1902.74 seconds
+         Stopping [0;1;39mSession c1 of User ubuntu[0m...
+[[0;32m  OK  [0m] Removed slice [0;1;39mSlice /system/modprobe[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mCloud-init target[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mGraphical Interface[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mTimer Units[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDaily apt upgrade and clean activities[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDaily apt download activities[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDaily dpkg database backup timer[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mPeriodic ext4 Onli…ata Check for All Filesystems[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDiscard unused blocks once a week[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDaily rotation of log files[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDaily man-db regeneration[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mMessage of the Day[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDaily Cleanup of Temporary Directories[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDownload data for …ailed at package install time[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mCheck to see wheth…w version of Ubuntu available[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mcloud-init hotplug hook socket[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mLVM2 poll daemon socket[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mLoad/Save RF Kill Switch Status /dev/rfkill Watch[0m.
+         Stopping [0;1;39mACPI event daemon[0m...
+         Stopping [0;1;39mAvailability of block devices[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mCloud-init: Final Stage[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mMulti-User System[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mLogin Prompts[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mSystem Time Synchronized[0m.
+         Stopping [0;1;39mLSB: automatic crash report generation[0m...
+         Stopping [0;1;39mchrony, an          Stopping [0;1;39mOpenBSD Secure Shell server[0m...
+         Stopping [0;1;39mLoad/Save Random Seed[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mRegular background program processing daemon[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mirqbalance daemon[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mACPI event daemon[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDispatcher daemon for systemd-networkd[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mSystem Logging Service[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mSerial Getty on ttyS0[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mGetty on tty1[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mchrony, an NTP client/server[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mAuthorization Manager[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mOpenBSD Secure Shell server[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mLoad/Save Random Seed[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mnvidia_gpu_settings_service AWS Helper Service[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39m/opt/dlami/nvme[0m.
+[[0;32m  OK  [0m] Removed slice [0;1;39mSlice /system/getty[0m.
+[[0;32m  OK  [0m] Removed slice [0;1;39mSlice /system/serial-getty[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mPreparation for Logins[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mHold until boot process finishes up[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mLSB: automatic crash report generation[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDocker Application Container Engine[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mNetwork is Online[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mHost and Network Name Lookups[0m.
+         Stopping [0;1;39mcontainerd container runtime[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mcontainerd container runtime[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mLVM event activation on device 259:4[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mLSB: Startup/shutd…or GDRcopy kernel-mode driver[0m.
+[[0;32m  OK  [0m] Removed slice [0;1;39mSlice /system/lvm2-pvscan[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mCreate final runtime dir for shutdown pivot root[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mSession c1 of User ubuntu[0m.
+         Stopping [0;1;39mUser Login Management[0m...
+         Stopping [0;1;39mUser Manager for UID 1000[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mAvailability of block devices[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mUser Manager for UID 1000[0m.
+         Stopping [0;1;39mUser Runtime Directory /run/user/1000[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mUser Login Management[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39m/run/user/1000[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mUser Runtime Directory /run/user/1000[0m.
+[[0;32m  OK  [0m] Removed slice [0;1;39mUser Slice of UID 1000[0m.
+         Stopping [0;1;39mPermit User Sessions[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mPermit User Sessions[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mRemote File Systems[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mPreparation for Remote File Systems[0m.
+[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 2) A stop job is running for …agent.amazon-ssm-agent (3s / 1min)
+M[K[[0;32m  OK  [0m] Stopped [0;1;39mSnap Daemon[0m.
+[K[[0;32m  OK  [0m] Stopped target [0;1;39mSystem Time Set[0m.
+[   [0;31m*[0;1;31m*[0m[0;31m*[0m] A stop job is running for Service f…agent.amazon-ssm-agent (5s / 1min)
+M[K[    [0;31m*[0;1;31m*[0m] A stop job is running for Service f…agent.amazon-ssm-agent (5s / 1min)
+M[K[     [0;31m*[0m] A stop job is running for Service f…agent.amazon-ssm-agent (6s / 1min)
+M[K[    [0;31m*[0;1;31m*[0m] A stop job is running for Service f…agent.amazon-ssm-agent (6s / 1min)
+M[K[[0;32m  OK  [0m] Stopped [0;1;39mService for snap a…on-ssm-agent.amazon-ssm-agent[0m.
+[K[[0;32m  OK  [0m] Stopped target [0;1;39mBasic System[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mNetwork[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mPath Units[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mACPI Events Check[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mTrigger CDI refres…lkit install / upgrade events[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mSlice Units[0m.
+[[0;32m  OK  [0m] Removed slice [0;1;39mUser and Session Slice[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mSocket Units[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mACPID Listen Socket[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mDocker Socket for the API[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mOpen-iSCSI iscsid Socket[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mSocket unix for snap application lxd.daemon[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mSocket unix for snap application lxd.user-daemon[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mSocket activation for snappy daemon[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mSyslog Socket[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mUUID daemon activation socket[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mSystem Initialization[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mLocal Encrypted Volumes[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDispatch Password …ts to Console Directory Watch[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mForward Password R…uests to Wall Directory Watch[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mLocal Verity Protected Volumes[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mCloud-init: Network Stage[0m.
+         Stopping [0;1;39mSet Up Additional Binary Formats[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mWait for Network to be Configured[0m.
+         Stopping [0;1;39mNetwork Name Resolution[0m...
+         Stopping [0;1;39mRecord System Boot/Shutdown in UTMP[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mSet Up Additional Binary Formats[0m.
+[[0;32m  OK  [0m] Unset automount [0;1;39mArbitrary …s File System Automount Point[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mNetwork Name Resolution[0m.
+         Stopping [0;1;39mNetwork Configuration[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mRecord System Boot/Shutdown in UTMP[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mCreate Volatile Files and Directories[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mLocal File Systems[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mMounted snaps[0m.
+         Unmounting [0;1;39m/boot/efi[0m...
+         Unmounting [0;1;39m/run/credentials/systemd-sysusers.service[0m...
+         Unmounting [0;1;39m/run/snapd/ns/lxd.mnt[0m...
+         Unmounting [0;1;39mMount unit for …n-ssm-agent, revision 13009[0m...
+         Unmounting [0;1;39mMount unit for core20, revision 2769[0m...
+         Unmounting [0;1;39mMount unit for core22, revision 2411[0m...
+         Unmounting [0;1;39mMount unit for lxd, revision 38800[0m...
+         Unmounting [0;1;39mMount unit for snapd, revision 26865[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mNetwork Configuration[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39m/boot/efi[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39m/run/credentials/systemd-sysusers.service[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39m/run/snapd/ns/lxd.mnt[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39mMount unit for a…zon-ssm-agent, revision 13009[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39mMount unit for core20, revision 2769[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39mMount unit for core22, revision 2411[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39mMount unit for lxd, revision 38800[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39mMount unit for snapd, revision 26865[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mPreparation for Network[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mMounting snaps[0m.
+[[0;32m  OK  [0m] Closed [0;1;39mNetwork Service Netlink Socket[0m.
+         Unmounting [0;1;39m/run/snapd/ns[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mCloud-init: Local Stage (pre-network)[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mFile System Check on /dev/disk/by-label/UEFI[0m.
+[[0;32m  OK  [0m] Removed slice [0;1;39mSlice /system/systemd-fsck[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mApply Kernel Variables[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mLoad Kernel Modules[0m.
+[[0;32m  OK  [0m] Unmounted [0;1;39m/run/snapd/ns[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mPreparation for Local File Systems[0m.
+[[0;32m  OK  [0m] Stopped target [0;1;39mSwaps[0m.
+[[0;32m  OK  [0m] Reached target [0;1;39mUnmount All Filesystems[0m.
+         Stopping [0;1;39mMonitoring of LVM…meventd or progress polling[0m...
+         Stopping [0;1;39mDevice-Mapper Multipath Device Controller[0m...
+[[0;32m  OK  [0m] Stopped [0;1;39mCreate Static Device Nodes in /dev[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mCreate System Users[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mDevice-Mapper Multipath Device Controller[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mRemount Root and Kernel File Systems[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mFile System Check on Root Device[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mMonitoring of LVM2… dmeventd or progress polling[0m.
+[[0;32m  OK  [0m] Reached target [0;1;39mSystem Shutdown[0m.
+[[0;32m  OK  [0m] Reached target [0;1;39mLate Shutdown Services[0m.
+[[0;32m  OK  [0m] Finished [0;1;39mSystem Power Off[0m.
+[[0;32m  OK  [0m] Reached target [0;1;39mSystem Power Off[0m.
+[ 2030.294170] sd-umoun[3279]: Failed to unmount /oldroot/sys: Device or resource busy
+[ 2030.295689] sd-umoun[3280]: Failed to unmount /oldroot: Device or resource busy
+[ 2030.301153] shutdown[1]: Failed to finalize file systems, ignoring.
+[ 2030.359028] reboot: Power down
+	2026-06-03T00:22:44.000Z
