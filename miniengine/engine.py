@@ -334,6 +334,9 @@ class Engine:
                 speculative_num_draft_tokens,
                 sum(p.numel() for p in self.draft_model.parameters()) // 1_000_000,
             )
+            # Spec verify graph (Bonus c): built lazily on first call once
+            # we know max_pages. The captured shape is fixed: B=1, q_len=K+1.
+            self._spec_verify_graph: dict | None = None
 
         logger.info(
             "Engine ready  —  mode=%s, backend=%s, compile=%s, graph=%s, "
@@ -1165,6 +1168,122 @@ class Engine:
     # ── Milestone-4 Track 2: speculative decoding ──────────────────────
 
     @torch.inference_mode()
+    # ── Spec verify CUDA-graph fast path (Milestone 4 Track 2 Bonus c) ──
+    #
+    # The naive target_verify goes through _fi_kwargs_chunked_prefill,
+    # which calls wrapper.plan() every step (~20 ms host work) and runs
+    # eager Python ops between the K+1 token forward (Q/K/V proj, RoPE,
+    # MLP, residuals).  At conc=1 that's the entire critical path —
+    # decode-style CUDA graph capture removes both costs.
+    #
+    # We capture one graph at the fixed shape (B=1, q_len=K+1, max_pages).
+    # The wrapper is built with use_cuda_graph=True and pre-allocated
+    # paged_kv_{indptr,indices,last_page_len,qo_indptr} buffers; plan()
+    # writes into those buffers at stable addresses so the captured
+    # kernels read the new scheduler state on each replay.
+
+    def _build_spec_verify_graph(self, max_pages: int) -> None:
+        """Capture the verify-step CUDA graph at shape (B=1, q_len=K+1)."""
+        assert self.attention_backend == "flashinfer", (
+            "spec verify graph requires flashinfer backend"
+        )
+        import flashinfer
+        d = self.device
+        q = self.speculative_num_draft_tokens + 1  # K+1 query tokens
+
+        # Pre-allocated metadata buffers — wrapper.plan() writes into these.
+        kv_indptr        = torch.zeros(2,             dtype=torch.int32, device=d)
+        kv_indices       = torch.zeros(max_pages,     dtype=torch.int32, device=d)
+        kv_last_page_len = torch.zeros(1,             dtype=torch.int32, device=d)
+        qo_indptr        = torch.tensor([0, q],       dtype=torch.int32, device=d)
+        batch_indices    = torch.zeros(q,             dtype=torch.int32, device=d)
+        positions        = torch.zeros(q,             dtype=torch.int32, device=d)
+
+        wrapper = flashinfer.BatchPrefillWithPagedKVCacheWrapper(
+            self._fi_workspace,
+            kv_layout="NHD",
+            use_cuda_graph=True,
+            qo_indptr_buf=qo_indptr,
+            paged_kv_indptr_buf=kv_indptr,
+            paged_kv_indices_buf=kv_indices,
+            paged_kv_last_page_len_buf=kv_last_page_len,
+        )
+
+        # Pre-allocated I/O tensors — replay rewrites their contents.
+        flat_ids = torch.zeros(1, q, dtype=torch.long, device=d)
+        flat_pos = torch.zeros(1, q, dtype=torch.long, device=d)
+        logits_indices = torch.arange(q, dtype=torch.long, device=d)
+
+        # Plan with a dummy "all pages point to scratch" state — purely to
+        # exercise the path so the graph captures correctly.  At replay
+        # time we replan() with the real metadata; that writes into the
+        # same buffers and the captured kernels pick up the new values.
+        kv_indptr.fill_(0)
+        kv_indptr[1] = 1  # 1 page
+        kv_indices[0] = self.pool.SCRATCH_PAGE
+        kv_last_page_len[0] = 1
+        batch_indices.fill_(0)
+        for i in range(q):
+            positions[i] = i
+
+        wrapper.plan(
+            qo_indptr=qo_indptr,
+            paged_kv_indptr=kv_indptr,
+            paged_kv_indices=kv_indices,
+            paged_kv_last_page_len=kv_last_page_len,
+            num_qo_heads=self._num_qo_heads,
+            num_kv_heads=self._num_kv_heads,
+            head_dim_qk=self._head_dim,
+            page_size=self.page_size,
+            causal=True,
+            q_data_type=self.dtype,
+        )
+
+        fi_ctx = FlashInferContext(
+            wrapper=wrapper,
+            batch_indices=batch_indices,
+            positions=positions,
+            kv_indptr=kv_indptr,
+            kv_indices=kv_indices,
+            kv_last_page_len=kv_last_page_len,
+        )
+        common = dict(
+            kv_pool_caches=self._kv_pool_caches,
+            logits_indices=logits_indices,
+            fi_ctx=fi_ctx,
+        )
+
+        # Warmup runs before capture.
+        for _ in range(3):
+            with torch.inference_mode():
+                _ = self.model(flat_ids, flat_pos, **common)
+        torch.cuda.synchronize()
+
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            with torch.inference_mode():
+                logits, _ = self.model(flat_ids, flat_pos, **common)
+
+        self._spec_verify_graph = dict(
+            graph=graph,
+            wrapper=wrapper,
+            q=q,
+            max_pages=max_pages,
+            flat_ids=flat_ids,
+            flat_pos=flat_pos,
+            qo_indptr=qo_indptr,
+            kv_indptr=kv_indptr,
+            kv_indices=kv_indices,
+            kv_last_page_len=kv_last_page_len,
+            batch_indices=batch_indices,
+            positions=positions,
+            logits=logits,
+        )
+        logger.info(
+            "Spec verify CUDA graph captured (q=%d, max_pages=%d)",
+            q, max_pages,
+        )
+
     def target_verify(
         self, request: Request, candidate_ids: list[int]
     ) -> torch.Tensor:
@@ -1202,6 +1321,61 @@ class Engine:
         if need > len(s.page_table):
             s.page_table.extend(self.pool.allocate(need - len(s.page_table)))
 
+        # ── Fast path: spec-verify CUDA graph (Bonus c) ────────────────
+        # Eligible when: flashinfer backend + speculative decode on + the
+        # page count fits inside the captured max_pages.  Saves ~20-25 ms
+        # of plan/launch overhead per verify by skipping eager Python work.
+        if (
+            self.attention_backend == "flashinfer"
+            and self.draft_model is not None
+            and need <= 64  # cap for the captured graph; ~64 pages × 32 = 2k tokens KV
+        ):
+            if self._spec_verify_graph is None:
+                self._build_spec_verify_graph(max_pages=64)
+            g = self._spec_verify_graph
+            if g["q"] == q:
+                ps = self.page_size
+                # Write the metadata into the wrapper's pre-allocated buffers.
+                # plan() will pick them up at the same addresses captured.
+                # Build metadata on host then bulk-copy to the captured
+                # buffers — avoids per-element host↔device sync that
+                # would otherwise undo most of the graph savings.
+                page_count = need
+                ids_t   = torch.tensor(candidate_ids, dtype=torch.long, device=self.device)
+                pos_t   = torch.arange(start, start + q, dtype=torch.long, device=self.device)
+                pages_t = torch.tensor(
+                    s.page_table[:page_count], dtype=torch.int32, device=self.device,
+                )
+                fipos_t = torch.arange(start, start + q, dtype=torch.int32, device=self.device)
+
+                g["flat_ids"][0, :q].copy_(ids_t)
+                g["flat_pos"][0, :q].copy_(pos_t)
+                g["kv_indptr"][0] = 0
+                g["kv_indptr"][1] = page_count
+                g["kv_indices"][:page_count].copy_(pages_t)
+                g["kv_last_page_len"][0] = ((new_len - 1) % ps) + 1
+                g["batch_indices"].fill_(0)
+                g["positions"][:q].copy_(fipos_t)
+
+                g["wrapper"].plan(
+                    qo_indptr=g["qo_indptr"],
+                    paged_kv_indptr=g["kv_indptr"],
+                    paged_kv_indices=g["kv_indices"],
+                    paged_kv_last_page_len=g["kv_last_page_len"],
+                    num_qo_heads=self._num_qo_heads,
+                    num_kv_heads=self._num_kv_heads,
+                    head_dim_qk=self._head_dim,
+                    page_size=ps,
+                    causal=True,
+                    q_data_type=self.dtype,
+                )
+                g["graph"].replay()
+                # logits is the pre-allocated tensor; clone to detach
+                # from the captured graph's memory so the caller's
+                # downstream ops don't get overwritten on next replay.
+                return g["logits"][0].clone()
+
+        # ── Slow path: regular chunked-prefill metadata (eager) ────────
         flat_ids = _to_long(candidate_ids, self.device).unsqueeze(0)
         flat_pos = _to_long(list(range(start, new_len)), self.device).unsqueeze(0)
         # We need a logit at EVERY candidate position, not just the last.
